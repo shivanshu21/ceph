@@ -36,7 +36,11 @@ ceph::crypto::HMACSHA1::~HMACSHA1()
 {
 }
 
-#elif USE_NSS
+ceph::crypto::HMACSHA256::~HMACSHA256()
+{
+}
+
+#elif defined(USE_NSS)
 
 // for SECMOD_RestartModules()
 #include <secmod.h>
@@ -85,7 +89,7 @@ void ceph::crypto::shutdown()
   pthread_mutex_unlock(&crypto_init_mutex);
 }
 
-ceph::crypto::HMACSHA1::~HMACSHA1()
+ceph::crypto::HMAC::~HMAC()
 {
   PK11_DestroyContext(ctx, PR_TRUE);
   PK11_FreeSymKey(symkey);
