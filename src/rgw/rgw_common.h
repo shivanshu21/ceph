@@ -1689,8 +1689,8 @@ extern bool verify_object_permission(struct req_state *s, RGWAccessControlPolicy
 extern bool verify_object_permission(struct req_state *s, int perm);
 /** Convert an input URL into a sane object name
  * by converting %-escaped strings into characters, etc*/
-extern bool url_decode(string& src_str, string& dest_str, bool in_query = false);
-extern void url_encode(const string& src, string& dst);
+extern bool url_decode(const string& src_str, string& dest_str, bool in_query = false); // DSS accepted. Const not there in src_str
+extern void url_encode(const string& src, string& dst, bool in_query = false); // DSS accepted change from upstream. In query in this function was not there.
 
 /* destination should be CEPH_CRYPTO_HMACSHA1_DIGESTSIZE bytes long */
 extern void calc_hmac_sha1(const char *key, int key_len,
