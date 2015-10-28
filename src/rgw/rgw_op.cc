@@ -1880,14 +1880,14 @@ void RGWPutObj::execute()
   s->obj_size = ofs;
   perfcounter->inc(l_rgw_put_b, s->obj_size);
 
-  if (s->aws4_auth_complete) {
+  if (s->aws4_auth_needs_complete) {
 
     /* complete aws4 auth */
     op_ret = RGW_Auth_S3::authorize_aws4_auth_complete(store, s);
     if (op_ret) {
       goto done;
     }
-    s->aws4_auth_complete = false;
+    s->aws4_auth_needs_complete = false;
 
     /* verify signature */
     if (s->aws4_auth_signature != s->aws4_auth_new_signature) {
