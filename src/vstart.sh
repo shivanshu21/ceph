@@ -344,7 +344,6 @@ DAEMONOPTS="
         heartbeat file = $CEPH_OUT_DIR/\$name.heartbeat
 "
 
-
 if [ "$start_mon" -eq 1 ]; then
 
 	if [ "$new" -eq 1 ]; then
@@ -366,6 +365,11 @@ if [ "$start_mon" -eq 1 ]; then
         rgw frontends = fastcgi, civetweb port=$CEPH_RGW_PORT
         filestore fd cache size = 32
         run dir = $CEPH_OUT_DIR
+        rgw keystone url = http://54.169.109.88:5000
+        rgw keystone accepted roles = adminrole, admin, role800, role801, role802
+        rgw s3 auth use keystone = true
+
+
 EOF
 if [ "$cephx" -eq 1 ] ; then
 cat <<EOF >> $conf_fn
@@ -672,6 +676,8 @@ if [ "$start_rgw" -eq 1 ]; then
     do_rgw
 fi
 
+echo "============================SHIV==============================="
+echo "============================DONE==============================="
 echo "started.  stop.sh to stop.  see out/* (e.g. 'tail -f out/????') for debug output."
 
 echo ""

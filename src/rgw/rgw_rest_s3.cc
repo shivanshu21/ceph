@@ -12,7 +12,6 @@
 #include "rgw_rest.h"
 #include "rgw_rest_s3.h"
 #include "rgw_auth_s3.h"
-#include "rgw_acl.h"
 #include "rgw_policy_s3.h"
 #include "rgw_user.h"
 #include "rgw_cors.h"
@@ -1178,7 +1177,24 @@ int RGWPostObj_ObjStore_S3::get_policy()
       dout(20) << "s3 keystone: trying keystone auth" << dendl;
 
       RGW_Auth_S3_Keystone_ValidateToken keystone_validator(store->ctx());
-      keystone_result = keystone_validator.validate_s3token(s3_access_key,string(encoded_policy.c_str(),encoded_policy.length()),received_signature_str);
+
+      // Get Resource info for keystone
+      string errmsg;
+      RGWResourceKeystoneInfo resource_info(s, store);
+      if(resource_info.fetchInfo(errmsg)) {
+          dout(1) << "DSS Error: " << errmsg << dendl;
+          return -EACCES;
+      }
+      dout(0) << "DSS INFO: Sending Action to keystone: " << resource_info.getAction() << dendl;
+      dout(0) << "DSS INFO: Sending Resource to keystone: " << resource_info.getResourceName() << dendl;
+      dout(0) << "DSS INFO: Sending Tenant to keystone: " << resource_info.getTenantName() << dendl;
+
+      keystone_result = keystone_validator.validate_s3token(s3_access_key,
+                                                            string(encoded_policy.c_str(),encoded_policy.length()),
+                                                            received_signature_str,
+                                                            resource_info.getAction(),
+                                                            resource_info.getResourceName(),
+                                                            resource_info.getTenantName());
 
       if (keystone_result < 0) {
         ldout(s->cct, 0) << "User lookup failed!" << dendl;
@@ -2236,12 +2252,43 @@ int RGWHandler_ObjStore_S3::init(RGWRados *store, struct req_state *s, RGWClient
 /*
  * Try to validate S3 auth against keystone s3token interface
  */
-int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id, const string& auth_token, const string& auth_sign) {
-  /* prepare keystone url */
+
+int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
+                                                         const string& auth_token,
+                                                         const string& auth_sign,
+                                                         const string& action,
+                                                         const string& resource_name,
+                                                         const string& tenant_name) {
+
+/* prepare keystone url
   string keystone_url = cct->_conf->rgw_keystone_url;
   if (keystone_url[keystone_url.size() - 1] != '/')
     keystone_url.append("/");
   keystone_url.append("v2.0/s3tokens");
+*/
+
+
+
+  /* prepare keystone url */
+  string action_str = "jrn:jcs:dss:";
+  string resource_str = "jrn:jcs:dss:";
+  action_str.append(action);
+  resource_str.append(tenant_name);
+  resource_str.append(":bucket:");
+  resource_str.append(resource_name);
+  string keystone_url = cct->_conf->rgw_keystone_url;
+  if (keystone_url[keystone_url.size() - 1] != '/') {
+    keystone_url.append("/");
+  }
+  keystone_url.append("v3/s3tokens");
+  keystone_url.append("?action=");
+  keystone_url.append(action_str);
+  keystone_url.append("&resource=");
+  keystone_url.append(resource_str);
+
+  dout(1) << "DSS INFO: Action string: " << action_str << dendl;
+  dout(1) << "DSS INFO: Resource string: " << resource_str << dendl;
+  dout(1) << "DSS INFO: Final URL: " << keystone_url << dendl;
 
   /* set required headers for keystone request */
   append_header("X-Auth-Token", cct->_conf->rgw_keystone_admin_token);
@@ -2290,12 +2337,16 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id, 
   }
 
   if (!found) {
-    ldout(cct, 5) << "s3 keystone: user does not hold a matching role; required roles: " << cct->_conf->rgw_keystone_accepted_roles << dendl;
+    ldout(cct, 5) << "s3 keystone: user does not hold a matching role; required roles: "
+                  << cct->_conf->rgw_keystone_accepted_roles << dendl;
     return -EPERM;
   }
 
   /* everything seems fine, continue with this user */
-  ldout(cct, 5) << "s3 keystone: validated token: " << response.token.tenant.name << ":" << response.user.name << " expires: " << response.token.expires << dendl;
+  ldout(cct, 5) << "s3 keystone: validated token: "
+                << response.token.tenant.name << ":"
+                << response.user.name << " expires: "
+                << response.token.expires << dendl;
   return 0;
 }
 
@@ -2370,7 +2421,25 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
     if (!rgw_create_s3_canonical_header(s->info, &s->header_time, token, qsr)) {
         dout(10) << "failed to create auth header\n" << token << dendl;
     } else {
-      keystone_result = keystone_validator.validate_s3token(auth_id, token, auth_sign);
+
+      // Get Resource info for keystone
+      string errmsg;
+      RGWResourceKeystoneInfo resource_info(s, store);
+      if(resource_info.fetchInfo(errmsg)) {
+          dout(1) << "DSS Error: " << errmsg << dendl;
+          return -EACCES;
+      }
+
+      dout(0) << "DSS INFO: Sending Action to keystone: " << resource_info.getAction() << dendl;
+      dout(0) << "DSS INFO: Sending Resource to keystone: " << resource_info.getResourceName() << dendl;
+      dout(0) << "DSS INFO: Sending Tenant to keystone: " << resource_info.getTenantName() << dendl;
+
+      keystone_result = keystone_validator.validate_s3token(auth_id,
+                                                            token,
+                                                            auth_sign,
+                                                            resource_info.getAction(),
+                                                            resource_info.getResourceName(),
+                                                            resource_info.getTenantName());
       if (keystone_result == 0) {
 	// Check for time skew first
 	time_t req_sec = s->header_time.sec();
@@ -2508,4 +2577,87 @@ RGWHandler *RGWRESTMgr_S3::get_handler(struct req_state *s)
     return new RGWHandler_ObjStore_Bucket_S3;
 
   return new RGWHandler_ObjStore_Obj_S3;
+}
+
+/*
+ * RGWResourceKeystoneInfo::fetchInfo
+ *
+ * Populates action, resource and tenant
+ * name for Keystone validation
+ */
+uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
+{
+    string resource_name;
+    int ret = 0;
+    fail_reason = "OK";
+    bool obj_action = false;
+
+    // Populate tenant name and resource name
+    resource_name = (_s->info).request_uri;
+    RGWObjectCtx& obj_ctx = *(RGWObjectCtx *)_s->obj_ctx;
+    if (!resource_name.empty()) {
+        const char *src = resource_name.c_str();
+        if (*src == '/')
+            ++src;
+        string bucket_str(src);
+        int pos = bucket_str.find('/');
+        if ((pos < bucket_str.length() - 1) && (pos > 0)) {
+            // If you found a pos for '/' and its not at the end like
+            // "path/". If its in between "path/a"
+            obj_action = true;
+        }
+        if (pos > 0) {
+            bucket_str = bucket_str.substr(0, pos);
+        }
+
+        setResourceName(bucket_str);
+        RGWBucketInfo source_info;
+        ret = _store->get_bucket_info(obj_ctx, bucket_str, source_info, NULL);
+        if (ret == 0) {
+            setTenantName(source_info.owner);
+        } else if (obj_action || (_s->op != OP_PUT)) { // Avoid bucket create case
+            dout(1) << "DSS ERROR: Failed to fetch tenant name for bucket " << bucket_str << dendl;
+            dout(1) << "DSS ERROR: OP is " << _s->op << dendl;
+            dout(1) << "DSS ERROR: obj action is  " << obj_action << dendl;
+            fail_reason = "Failed to fetch tenant name for bucket " + bucket_str;
+            return -1;
+        }
+    } else {
+        dout(1) << "DSS ERROR: Failed to fetch resource name" << dendl;
+        fail_reason = "Failed to fetch resource name";
+        return -1;
+    }
+
+    // Populate action string
+    if (fetchActionString(_s->op, obj_action, fail_reason)) {
+        dout(1) << "DSS ERROR: Failed to fetch action string. Reason: " << fail_reason << dendl;
+        fail_reason = "Failed to fetch action string. Reason: " + fail_reason;
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * RGWResourceKeystoneInfo::fetchActionString
+ *
+ * Populates action based of OP number
+ */
+uint32_t RGWResourceKeystoneInfo::fetchActionString(uint32_t op, bool object_action, string& fail_reason)
+{
+    fail_reason = "OK";
+
+    // Return error for bad action
+    if (op == OP_UNKNOWN) {
+        fail_reason = "Bad action requested";
+        return -1;
+    }
+
+    // Increase the index for object actions
+    if (object_action) {
+        op += DSS_KEYSTONE_MAX_ACTIONS;
+    }
+
+    setAction(ACTIONS[op]);
+    return 0;
 }
