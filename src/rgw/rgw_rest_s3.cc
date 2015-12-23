@@ -2241,7 +2241,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id, 
   string keystone_url = cct->_conf->rgw_keystone_url;
   if (keystone_url[keystone_url.size() - 1] != '/')
     keystone_url.append("/");
-  keystone_url.append("v2.0/s3tokens");
+  keystone_url.append("v3/s3tokens");
 
   /* set required headers for keystone request */
   append_header("X-Auth-Token", cct->_conf->rgw_keystone_admin_token);
