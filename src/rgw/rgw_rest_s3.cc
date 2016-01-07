@@ -1146,144 +1146,159 @@ int RGWPostObj_ObjStore_S3::get_params()
 
 int RGWPostObj_ObjStore_S3::get_policy()
 {
-  bufferlist encoded_policy;
-
-  if (part_bl("policy", &encoded_policy)) {
-
-    // check that the signature matches the encoded policy
-    string s3_access_key;
-    if (!part_str("AWSAccessKeyId", &s3_access_key)) {
-      ldout(s->cct, 0) << "No S3 access key found!" << dendl;
-      err_msg = "Missing access key";
-      return -EINVAL;
-    }
-    string received_signature_str;
-    if (!part_str("signature", &received_signature_str)) {
-      ldout(s->cct, 0) << "No signature found!" << dendl;
-      err_msg = "Missing signature";
-      return -EINVAL;
-    }
-
+    bufferlist encoded_policy;
+    bool isTokenBasedAuth = (store->auth_method).get_token_validation();
+    (store->auth_method).set_token_validation(false);
     RGWUserInfo user_info;
+    string received_signature_str;
+    string s3_access_key;
 
-    ret = rgw_get_user_info_by_access_key(store, s3_access_key, user_info);
-    if (ret < 0) {
-      // Try keystone authentication as well
-      int keystone_result = -EINVAL;
-      if (!store->ctx()->_conf->rgw_s3_auth_use_keystone ||
-	  store->ctx()->_conf->rgw_keystone_url.empty()) {
-        return -EACCES;
-      }
-      dout(20) << "s3 keystone: trying keystone auth" << dendl;
-
-      RGW_Auth_S3_Keystone_ValidateToken keystone_validator(store->ctx());
-
-      // Get Resource info for keystone
-      string errmsg;
-      RGWResourceKeystoneInfo resource_info(s, store);
-      if(resource_info.fetchInfo(errmsg)) {
-          dout(1) << "DSS Error: " << errmsg << dendl;
-          return -EACCES;
-      }
-      dout(0) << "DSS INFO: Sending Action to keystone: " << resource_info.getAction() << dendl;
-      dout(0) << "DSS INFO: Sending Resource to keystone: " << resource_info.getResourceName() << dendl;
-      dout(0) << "DSS INFO: Sending Tenant to keystone: " << resource_info.getTenantName() << dendl;
-
-      keystone_result = keystone_validator.validate_s3token(s3_access_key,
-                                                            string(encoded_policy.c_str(),encoded_policy.length()),
-                                                            received_signature_str,
-                                                            resource_info.getAction(),
-                                                            resource_info.getResourceName(),
-                                                            resource_info.getTenantName());
-
-      if (keystone_result < 0) {
-        ldout(s->cct, 0) << "User lookup failed!" << dendl;
-        err_msg = "Bad access key / signature";
-        return -EACCES;
-      }
-
-      user_info.user_id = keystone_validator.response.token.tenant.id;
-      user_info.display_name = keystone_validator.response.token.tenant.name;
-
-      /* try to store user if it not already exists */
-      if (rgw_get_user_info_by_uid(store, keystone_validator.response.token.tenant.id, user_info) < 0) {
-        int ret = rgw_store_user_info(store, user_info, NULL, NULL, 0, true);
-        if (ret < 0) {
-          dout(10) << "NOTICE: failed to store new user's info: ret=" << ret << dendl;
+    if (part_bl("policy", &encoded_policy)) {
+        if (!isTokenBasedAuth) {
+            // check that the signature matches the encoded policy
+            if (!part_str("AWSAccessKeyId", &s3_access_key)) {
+                ldout(s->cct, 0) << "No S3 access key found!" << dendl;
+                err_msg = "Missing access key";
+                return -EINVAL;
+            }
+            if (!part_str("signature", &received_signature_str)) {
+                ldout(s->cct, 0) << "No signature found!" << dendl;
+                err_msg = "Missing signature";
+                return -EINVAL;
+            }
+            ret = rgw_get_user_info_by_access_key(store, s3_access_key, user_info);
         }
 
-        s->perm_mask = RGW_PERM_FULL_CONTROL;
-      }
-    } else {
-      map<string, RGWAccessKey> access_keys  = user_info.access_keys;
+        if ((ret < 0) || isTokenBasedAuth) {
+            // Try keystone authentication as well
+            int keystone_result = -EINVAL;
+            if (!store->ctx()->_conf->rgw_s3_auth_use_keystone ||
+                    store->ctx()->_conf->rgw_keystone_url.empty()) {
+                return -EACCES;
+            }
+            dout(20) << "s3 keystone: trying keystone auth" << dendl;
 
-      map<string, RGWAccessKey>::const_iterator iter = access_keys.find(s3_access_key);
-      // We know the key must exist, since the user was returned by
-      // rgw_get_user_info_by_access_key, but it doesn't hurt to check!
-      if (iter == access_keys.end()) {
-	ldout(s->cct, 0) << "Secret key lookup failed!" << dendl;
-	err_msg = "No secret key for matching access key";
-	return -EACCES;
-      }
-      string s3_secret_key = (iter->second).key;
+            RGW_Auth_S3_Keystone_ValidateToken keystone_validator(store->ctx());
 
-      char expected_signature_char[CEPH_CRYPTO_HMACSHA1_DIGESTSIZE];
+            // Get Resource info for keystone
+            string errmsg;
+            RGWResourceKeystoneInfo resource_info(s, store);
+            if(resource_info.fetchInfo(errmsg)) {
+                dout(1) << "DSS Error: " << errmsg << dendl;
+                return -EACCES;
+            }
+            dout(0) << "DSS INFO: Sending Action to keystone: " << resource_info.getAction() << dendl;
+            dout(0) << "DSS INFO: Sending Resource to keystone: " << resource_info.getResourceName() << dendl;
+            dout(0) << "DSS INFO: Sending Tenant to keystone: " << resource_info.getTenantName() << dendl;
 
-      calc_hmac_sha1(s3_secret_key.c_str(), s3_secret_key.size(), encoded_policy.c_str(), encoded_policy.length(), expected_signature_char);
-      bufferlist expected_signature_hmac_raw;
-      bufferlist expected_signature_hmac_encoded;
-      expected_signature_hmac_raw.append(expected_signature_char, CEPH_CRYPTO_HMACSHA1_DIGESTSIZE);
-      expected_signature_hmac_raw.encode_base64(expected_signature_hmac_encoded);
-      expected_signature_hmac_encoded.append((char)0); /* null terminate */
+            if (isTokenBasedAuth) {
+                keystone_result = keystone_validator.validate_consoleToken(resource_info.getAction(),
+                        resource_info.getResourceName(),
+                        resource_info.getTenantName(),
+                        (store->auth_method).get_token());
+            } else {
+                keystone_result = keystone_validator.validate_s3token(s3_access_key,
+                        string(encoded_policy.c_str(),encoded_policy.length()),
+                        received_signature_str,
+                        resource_info.getAction(),
+                        resource_info.getResourceName(),
+                        resource_info.getTenantName());
+            }
 
-      if (received_signature_str.compare(expected_signature_hmac_encoded.c_str()) != 0) {
-	ldout(s->cct, 0) << "Signature verification failed!" << dendl;
-	ldout(s->cct, 0) << "received: " << received_signature_str.c_str() << dendl;
-	ldout(s->cct, 0) << "expected: " << expected_signature_hmac_encoded.c_str() << dendl;
-	err_msg = "Bad access key / signature";
-	return -EACCES;
-      }
-    }
+            if (keystone_result < 0) {
+                ldout(s->cct, 0) << "User lookup failed!" << dendl;
+                if (!isTokenBasedAuth) {
+                    err_msg = "Bad access key / signature";
+                } else {
+                    err_msg = "Bad X-Auth-Token";
+                }
+                return -EACCES;
+            }
+            user_info.user_id = keystone_validator.response.token.tenant.id;
+            user_info.display_name = keystone_validator.response.token.tenant.name;
+            /* try to store user if it not already exists */
+            if (rgw_get_user_info_by_uid(store, keystone_validator.response.token.tenant.id, user_info) < 0) {
+                int ret = rgw_store_user_info(store, user_info, NULL, NULL, 0, true);
+                if (ret < 0) {
+                    dout(10) << "NOTICE: failed to store new user's info: ret=" << ret << dendl;
+                }
 
-    ldout(s->cct, 0) << "Successful Signature Verification!" << dendl;
-    bufferlist decoded_policy;
-    try {
-      decoded_policy.decode_base64(encoded_policy);
-    } catch (buffer::error& err) {
-      ldout(s->cct, 0) << "failed to decode_base64 policy" << dendl;
-      err_msg = "Could not decode policy";
-      return -EINVAL;
-    }
+                s->perm_mask = RGW_PERM_FULL_CONTROL;
+            }
+        } else {
+            map<string, RGWAccessKey> access_keys  = user_info.access_keys;
+            map<string, RGWAccessKey>::const_iterator iter = access_keys.find(s3_access_key);
+            // We know the key must exist, since the user was returned by
+            // rgw_get_user_info_by_access_key, but it doesn't hurt to check!
+            if (iter == access_keys.end()) {
+                ldout(s->cct, 0) << "Secret key lookup failed!" << dendl;
+                err_msg = "No secret key for matching access key";
+                return -EACCES;
+            }
+            string s3_secret_key = (iter->second).key;
 
-    decoded_policy.append('\0'); // NULL terminate
+            char expected_signature_char[CEPH_CRYPTO_HMACSHA1_DIGESTSIZE];
 
-    ldout(s->cct, 0) << "POST policy: " << decoded_policy.c_str() << dendl;
+            calc_hmac_sha1(s3_secret_key.c_str(), s3_secret_key.size(),
+                           encoded_policy.c_str(), encoded_policy.length(),
+                           expected_signature_char);
+            bufferlist expected_signature_hmac_raw;
+            bufferlist expected_signature_hmac_encoded;
+            expected_signature_hmac_raw.append(expected_signature_char, CEPH_CRYPTO_HMACSHA1_DIGESTSIZE);
+            expected_signature_hmac_raw.encode_base64(expected_signature_hmac_encoded);
+            expected_signature_hmac_encoded.append((char)0); /* null terminate */
 
-    int r = post_policy.from_json(decoded_policy, err_msg);
-    if (r < 0) {
-      if (err_msg.empty()) {
-	err_msg = "Failed to parse policy";
-      }
-      ldout(s->cct, 0) << "failed to parse policy" << dendl;
-      return -EINVAL;
-    }
+            if (received_signature_str.compare(expected_signature_hmac_encoded.c_str()) != 0) {
+                ldout(s->cct, 0) << "Signature verification failed!" << dendl;
+                ldout(s->cct, 0) << "received: " << received_signature_str.c_str() << dendl;
+                ldout(s->cct, 0) << "expected: " << expected_signature_hmac_encoded.c_str() << dendl;
+                err_msg = "Bad access key / signature";
+                return -EACCES;
+            }
+        }
 
-    post_policy.set_var_checked("AWSAccessKeyId");
-    post_policy.set_var_checked("policy");
-    post_policy.set_var_checked("signature");
+        if (isTokenBasedAuth) {
+            ldout(s->cct, 0) << "Token verification successful!" << dendl;
+        } else {
+            ldout(s->cct, 0) << "Successful Signature Verification!" << dendl;
+        }
+        bufferlist decoded_policy;
+        try {
+            decoded_policy.decode_base64(encoded_policy);
+        } catch (buffer::error& err) {
+            ldout(s->cct, 0) << "failed to decode_base64 policy" << dendl;
+            err_msg = "Could not decode policy";
+            return -EINVAL;
+        }
 
-    r = post_policy.check(&env, err_msg);
-    if (r < 0) {
-      if (err_msg.empty()) {
-	err_msg = "Policy check failed";
-      }
-      ldout(s->cct, 0) << "policy check failed" << dendl;
-      return r;
-    }
+        decoded_policy.append('\0'); // NULL terminate
+        ldout(s->cct, 0) << "POST policy: " << decoded_policy.c_str() << dendl;
+        int r = post_policy.from_json(decoded_policy, err_msg);
+        if (r < 0) {
+            if (err_msg.empty()) {
+                err_msg = "Unknown error occurred in parsing the policy.";
+            }
+            ldout(s->cct, 0) << "Failed to parse policy. Reason: " << err_msg << dendl;
+            return -EINVAL;
+        }
 
-    s->user = user_info;
-    s->owner.set_id(user_info.user_id);
-    s->owner.set_name(user_info.display_name);
+        if (!isTokenBasedAuth) {
+            post_policy.set_var_checked("AWSAccessKeyId");
+            post_policy.set_var_checked("policy");
+            post_policy.set_var_checked("signature");
+        }
+
+        r = post_policy.check(&env, err_msg);
+        if (r < 0) {
+            if (err_msg.empty()) {
+                err_msg = "Policy check failed";
+            }
+            ldout(s->cct, 0) << "policy check failed" << dendl;
+            return r;
+        }
+        s->user = user_info;
+        s->owner.set_id(user_info.user_id);
+        s->owner.set_name(user_info.display_name);
   } else {
     ldout(s->cct, 0) << "No attached policy found!" << dendl;
   }
@@ -1299,7 +1314,6 @@ int RGWPostObj_ObjStore_S3::get_policy()
   }
 
   policy = s3policy;
-
   return 0;
 }
 
@@ -2258,40 +2272,28 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
                                                          const string& auth_sign,
                                                          const string& action,
                                                          const string& resource_name,
-                                                         const string& tenant_name) {
-
-/* prepare keystone url
-  string keystone_url = cct->_conf->rgw_keystone_url;
-  if (keystone_url[keystone_url.size() - 1] != '/')
-    keystone_url.append("/");
-  keystone_url.append("v2.0/s3tokens");
-*/
-
-
+                                                         const string& tenant_name)
+{
 
   /* prepare keystone url */
   string action_str = "jrn:jcs:dss:";
   string resource_str = "jrn:jcs:dss:";
   action_str.append(action);
-  resource_str.append(tenant_name);
-  resource_str.append(":bucket:");
+  resource_str.append(":Bucket:");
   resource_str.append(resource_name);
   string keystone_url = cct->_conf->rgw_keystone_url;
   if (keystone_url[keystone_url.size() - 1] != '/') {
     keystone_url.append("/");
   }
-  keystone_url.append("v3/s3tokens");
-  keystone_url.append("?action=");
-  keystone_url.append(action_str);
-  keystone_url.append("&resource=");
-  keystone_url.append(resource_str);
 
-  dout(1) << "DSS INFO: Action string: " << action_str << dendl;
-  dout(1) << "DSS INFO: Resource string: " << resource_str << dendl;
-  dout(1) << "DSS INFO: Final URL: " << keystone_url << dendl;
+  keystone_url.append("v3/s3tokens");
+
+  dout(0) << "DSS INFO: Action string: " << action_str << dendl;
+  dout(0) << "DSS INFO: Resource string: " << resource_str << dendl;
+  dout(0) << "DSS INFO: Final URL: " << keystone_url << dendl;
 
   /* set required headers for keystone request */
-  append_header("X-Auth-Token", cct->_conf->rgw_keystone_admin_token);
+  //append_header("X-Auth-Token", cct->_conf->rgw_keystone_admin_token);
   append_header("Content-Type", "application/json");
 
   /* encode token */
@@ -2308,9 +2310,13 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
   credentials.dump_string("access", auth_id);
   credentials.dump_string("token", token_encoded.c_str());
   credentials.dump_string("signature", auth_sign);
+  credentials.open_object_section("action_resource_list");
+  credentials.dump_string("action", action_str.c_str());
+  credentials.dump_string("resource", resource_str.c_str());
+  credentials.dump_string("implicit_allow", "False");
   credentials.close_section();
   credentials.close_section();
-
+  credentials.close_section();
   std::stringstream os;
   credentials.flush(os);
   set_tx_buffer(os.str());
@@ -2327,23 +2333,70 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
     dout(2) << "s3 keystone: token parsing failed" << dendl;
     return -EPERM;
   }
-
-  /* check if we have a valid role */
-  bool found = false;
-  list<string>::iterator iter;
-  for (iter = roles_list.begin(); iter != roles_list.end(); ++iter) {
-    if ((found=response.user.has_role(*iter))==true)
-      break;
-  }
-
-  if (!found) {
-    ldout(cct, 5) << "s3 keystone: user does not hold a matching role; required roles: "
-                  << cct->_conf->rgw_keystone_accepted_roles << dendl;
-    return -EPERM;
-  }
+  dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
 
   /* everything seems fine, continue with this user */
   ldout(cct, 5) << "s3 keystone: validated token: "
+                << response.token.tenant.name << ":"
+                << response.user.name << " expires: "
+                << response.token.expires << dendl;
+  return 0;
+}
+
+
+/*
+ * Validate Token sent by console
+ */
+int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& action,
+                                                              const string& resource_name,
+                                                              const string& tenant_name,
+                                                              const string& token)
+{
+  /* prepare keystone url */
+  string action_str = "jrn:jcs:dss:";
+  string resource_str = "jrn:jcs:dss:";
+  action_str.append(action);
+  resource_str.append(":Bucket:");
+  resource_str.append(resource_name);
+  string keystone_url = cct->_conf->rgw_keystone_url;
+  if (keystone_url[keystone_url.size() - 1] != '/') {
+    keystone_url.append("/");
+  }
+
+  keystone_url.append("v3/token-auth");
+  keystone_url.append("?action=");
+  keystone_url.append(action_str);
+  keystone_url.append("&resource=");
+  keystone_url.append(resource_str);
+
+  dout(0) << "DSS INFO: Validating token" << dendl;
+  dout(0) << "DSS INFO: Action string: " << action_str << dendl;
+  dout(0) << "DSS INFO: Resource string: " << resource_str << dendl;
+  dout(0) << "DSS INFO: Final URL: " << keystone_url << dendl;
+
+  /* set required headers for keystone request */
+  append_header("X-Auth-Token", token);
+  //append_header("X-Subject-Token", token);
+  append_header("Content-Type", "application/json");
+
+  /* send request */
+  int ret = process("GET", keystone_url.c_str());
+  if (ret < 0) {
+    dout(0) << "DSS INFO: Token keystone: token validation ERROR: " << rx_buffer.c_str() << dendl;
+    dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
+    return -EPERM;
+  }
+
+  /* now parse response */
+  if (response.parse(cct, rx_buffer) < 0) {
+    dout(0) << "DSS INFO: Token keystone: token parsing failed" << dendl;
+    dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
+    return -EPERM;
+  }
+  dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
+
+  /* everything seems fine, continue with this user */
+  ldout(cct, 5) << "DSS INFO: Token keystone: validated token: "
                 << response.token.tenant.name << ":"
                 << response.user.name << " expires: "
                 << response.token.expires << dendl;
@@ -2381,32 +2434,35 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
     return 0;
   }
 
-  if (!s->http_auth || !(*s->http_auth)) {
-    auth_id = s->info.args.get("AWSAccessKeyId");
-    if (auth_id.size()) {
-      auth_sign = s->info.args.get("Signature");
+  bool isTokenBasedAuth = (store->auth_method).get_token_validation();
+  (store->auth_method).set_token_validation(false);
 
-      string date = s->info.args.get("Expires");
-      time_t exp = atoll(date.c_str());
-      if (now >= exp)
-        return -EPERM;
+  if (!isTokenBasedAuth) {
+      if (!s->http_auth || !(*s->http_auth)) {
+          auth_id = s->info.args.get("AWSAccessKeyId");
+          if (auth_id.size()) {
+              auth_sign = s->info.args.get("Signature");
 
-      qsr = true;
-    } else {
-      /* anonymous access */
-      init_anon_user(s);
-      return 0;
-    }
-  } else {
-    if (strncmp(s->http_auth, "AWS ", 4))
-      return -EINVAL;
-    string auth_str(s->http_auth + 4);
-    int pos = auth_str.rfind(':');
-    if (pos < 0)
-      return -EINVAL;
-
-    auth_id = auth_str.substr(0, pos);
-    auth_sign = auth_str.substr(pos + 1);
+              string date = s->info.args.get("Expires");
+              time_t exp = atoll(date.c_str());
+              if (now >= exp)
+                  return -EPERM;
+              qsr = true;
+          } else {
+              /* anonymous access */
+              init_anon_user(s);
+              return 0;
+          }
+      } else {
+          if (strncmp(s->http_auth, "AWS ", 4))
+              return -EINVAL;
+          string auth_str(s->http_auth + 4);
+          int pos = auth_str.rfind(':');
+          if (pos < 0)
+              return -EINVAL;
+          auth_id = auth_str.substr(0, pos);
+          auth_sign = auth_str.substr(pos + 1);
+      }
   }
 
   /* try keystone auth first */
@@ -2418,7 +2474,8 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
     RGW_Auth_S3_Keystone_ValidateToken keystone_validator(store->ctx());
     string token;
 
-    if (!rgw_create_s3_canonical_header(s->info, &s->header_time, token, qsr)) {
+    if (!isTokenBasedAuth &&
+       (!rgw_create_s3_canonical_header(s->info, &s->header_time, token, qsr))) {
         dout(10) << "failed to create auth header\n" << token << dendl;
     } else {
 
@@ -2426,7 +2483,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
       string errmsg;
       RGWResourceKeystoneInfo resource_info(s, store);
       if(resource_info.fetchInfo(errmsg)) {
-          dout(1) << "DSS Error: " << errmsg << dendl;
+          dout(0) << "DSS Error: " << errmsg << dendl;
           return -EACCES;
       }
 
@@ -2434,23 +2491,29 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
       dout(0) << "DSS INFO: Sending Resource to keystone: " << resource_info.getResourceName() << dendl;
       dout(0) << "DSS INFO: Sending Tenant to keystone: " << resource_info.getTenantName() << dendl;
 
-      keystone_result = keystone_validator.validate_s3token(auth_id,
-                                                            token,
-                                                            auth_sign,
-                                                            resource_info.getAction(),
-                                                            resource_info.getResourceName(),
-                                                            resource_info.getTenantName());
+      if (isTokenBasedAuth) {
+          keystone_result = keystone_validator.validate_consoleToken(resource_info.getAction(),
+                                                                     resource_info.getResourceName(),
+                                                                     resource_info.getTenantName(),
+                                                                     (store->auth_method).get_token());
+      } else {
+          keystone_result = keystone_validator.validate_s3token(auth_id,
+                                                                token,
+                                                                auth_sign,
+                                                                resource_info.getAction(),
+                                                                resource_info.getResourceName(),
+                                                                resource_info.getTenantName());
+      }
+
       if (keystone_result == 0) {
 	// Check for time skew first
 	time_t req_sec = s->header_time.sec();
-
 	if ((req_sec < now - RGW_AUTH_GRACE_MINS * 60 ||
 	     req_sec > now + RGW_AUTH_GRACE_MINS * 60) && !qsr) {
 	  dout(10) << "req_sec=" << req_sec << " now=" << now << "; now - RGW_AUTH_GRACE_MINS=" << now - RGW_AUTH_GRACE_MINS * 60 << "; now + RGW_AUTH_GRACE_MINS=" << now + RGW_AUTH_GRACE_MINS * 60 << dendl;
 	  dout(0) << "NOTICE: request time skew too big now=" << utime_t(now, 0) << " req_time=" << s->header_time << dendl;
 	  return -ERR_REQUEST_TIME_SKEWED;
 	}
-
 
 	s->user.user_id = keystone_validator.response.token.tenant.id;
         s->user.display_name = keystone_validator.response.token.tenant.name; // wow.
@@ -2600,8 +2663,17 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
         if (*src == '/')
             ++src;
         string bucket_str(src);
+
+        //get_all_buckets() case
+        if (bucket_str.empty()) {
+            fail_reason = "No bucket received. This is the get all buckets case.";
+            // Populate action string
+            setAction("ListAllMyBuckets");
+            return 0;
+        }
+
         int pos = bucket_str.find('/');
-        if ((pos < bucket_str.length() - 1) && (pos > 0)) {
+        if ((pos < (bucket_str.length() - 1)) && (pos > 0)) {
             // If you found a pos for '/' and its not at the end like
             // "path/". If its in between "path/a"
             obj_action = true;
@@ -2616,21 +2688,21 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
         if (ret == 0) {
             setTenantName(source_info.owner);
         } else if (obj_action || (_s->op != OP_PUT)) { // Avoid bucket create case
-            dout(1) << "DSS ERROR: Failed to fetch tenant name for bucket " << bucket_str << dendl;
-            dout(1) << "DSS ERROR: OP is " << _s->op << dendl;
-            dout(1) << "DSS ERROR: obj action is  " << obj_action << dendl;
+            dout(0) << "DSS ERROR: Failed to fetch tenant name for bucket " << bucket_str << dendl;
+            dout(0) << "DSS ERROR: OP is " << _s->op << dendl;
+            dout(0) << "DSS ERROR: obj action is  " << obj_action << dendl;
             fail_reason = "Failed to fetch tenant name for bucket " + bucket_str;
             return -1;
         }
     } else {
-        dout(1) << "DSS ERROR: Failed to fetch resource name" << dendl;
+        dout(0) << "DSS ERROR: Failed to fetch resource name" << dendl;
         fail_reason = "Failed to fetch resource name";
         return -1;
     }
 
     // Populate action string
     if (fetchActionString(_s->op, obj_action, fail_reason)) {
-        dout(1) << "DSS ERROR: Failed to fetch action string. Reason: " << fail_reason << dendl;
+        dout(0) << "DSS ERROR: Failed to fetch action string. Reason: " << fail_reason << dendl;
         fail_reason = "Failed to fetch action string. Reason: " + fail_reason;
         return -1;
     }
@@ -2647,10 +2719,18 @@ uint32_t RGWResourceKeystoneInfo::fetchActionString(uint32_t op, bool object_act
 {
     fail_reason = "OK";
 
-    // Return error for bad action
-    if (op == OP_UNKNOWN) {
+    // Return error for bad action or options
+    if ((op == OP_UNKNOWN) || (op == OP_OPTIONS)) {
         fail_reason = "Bad action requested";
         return -1;
+    } else if (op == OP_HEAD) {
+        // Get permission implies Head too
+        op = OP_GET;
+    } else if (op == OP_COPY) {
+        if (!object_action) {
+            fail_reason = "Copy operation only allowed on objects";
+            return -1;
+        }
     }
 
     // Increase the index for object actions

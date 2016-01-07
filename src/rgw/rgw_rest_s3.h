@@ -345,6 +345,11 @@ public:
                        const string& action,
                        const string& resource_name,
                        const string& tenant_name);
+
+  int validate_consoleToken(const string& action,
+                            const string& resource_name,
+                            const string& tenant_name,
+                            const string& token);
 };
 
 class RGW_Auth_S3 {
@@ -465,20 +470,20 @@ class RGWResourceKeystoneInfo {
 
         // Based on Enum http_op in rgw_common.h
         const string ACTIONS[2 * DSS_KEYSTONE_MAX_ACTIONS] = {
-            "DSS_GET_BUCKET",
-            "DSS_PUT_BUCKET",
-            "DSS_DELETE_BUCKET",
-            "DSS_HEAD_BUCKET",
-            "DSS_POST_BUCKET",
-            "DSS_COPY_BUCKET",
-            "DSS_OPTIONS_BUCKET",
-            "DSS_GET_OBJECT",
-            "DSS_PUT_OBJECT",
-            "DSS_DELETE_OBJECT",
-            "DSS_HEAD_OBJECT",
-            "DSS_POST_OBJECT",
-            "DSS_COPY_OBJECT",
-            "DSS_OPTIONS_OBJECT"
+            "ListBucket",
+            "CreateBucket",
+            "DeleteBucket",
+            "HeadBucket",     // Permission same as get
+            "PostBucket",
+            "CopyBucket",     // Not supported but needed
+            "OptionsBucket",  // Not supported but needed
+            "GetObject",
+            "CreateObject",
+            "DeleteObject",
+            "HeadObject",     // Permission same as Get
+            "PostObject",
+            "CopyObject",
+            "OptionsObject"   // Not supported but needed
         };
 
     public:
