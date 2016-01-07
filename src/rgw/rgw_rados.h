@@ -1276,7 +1276,9 @@ public:
                quota_handler(NULL),
                finisher(NULL),
                rest_master_conn(NULL),
-               meta_mgr(NULL), data_log(NULL) {}
+               meta_mgr(NULL),
+               data_log(NULL),
+               auth_method(false) {}
 
   uint64_t get_new_req_id() {
     return max_req_id.inc();
@@ -1293,6 +1295,33 @@ public:
   void set_zone(const string& name) {
     zone_name = name;
   }
+
+  /* Holds info on whether the request should be
+   * validated via EC2 signature or Auth tokens */
+  class authorization_method {
+      private:
+          bool _token_validation;
+          string _token;
+      public:
+          inline bool get_token_validation()
+          {
+              return _token_validation;
+          }
+          inline void set_token_validation(bool method)
+          {
+              _token_validation = method;
+          }
+          inline string get_token()
+          {
+              return _token;
+          }
+          inline void set_token(string tok)
+          {
+              _token = tok;
+          }
+          authorization_method(bool method) : _token_validation(method) { }
+          ~authorization_method() { }
+  } auth_method;
 
   RGWRegion region;
   RGWZoneParams zone; /* internal zone params, e.g., rados pools */

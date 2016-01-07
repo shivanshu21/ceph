@@ -797,8 +797,8 @@ void KeystoneToken::Service::decode_json(JSONObj *obj)
 
 void KeystoneToken::Token::Tenant::decode_json(JSONObj *obj)
 {
-  JSONDecoder::decode_json("id", id, obj, true);
-  JSONDecoder::decode_json("name", name, obj, true);
+  JSONDecoder::decode_json("domain_id", id, obj, true); //<<<<<< DSS: Used to be "tenant"
+  JSONDecoder::decode_json("name", name, obj, false);   //<<<<<< DSS: used to be true
   JSONDecoder::decode_json("description", description, obj);
   JSONDecoder::decode_json("enabled", enabled, obj);
 }
@@ -808,8 +808,8 @@ void KeystoneToken::Token::decode_json(JSONObj *obj)
   string expires_iso8601;
   struct tm t;
 
-  JSONDecoder::decode_json("id", id, obj, true);
   JSONDecoder::decode_json("tenant", tenant, obj, true);
+  JSONDecoder::decode_json("token", id, obj, true);
   JSONDecoder::decode_json("expires", expires_iso8601, obj, true);
 
   if (parse_iso8601(expires_iso8601.c_str(), &t)) {
@@ -828,9 +828,9 @@ void KeystoneToken::User::Role::decode_json(JSONObj *obj)
 
 void KeystoneToken::User::decode_json(JSONObj *obj)
 {
-  JSONDecoder::decode_json("id", id, obj, true);
+  JSONDecoder::decode_json("user_id", id, obj, true);          //<<<<<< DSS: Used to be "user"
   JSONDecoder::decode_json("name", name, obj);
-  JSONDecoder::decode_json("username", user_name, obj, true);
+  JSONDecoder::decode_json("username", user_name, obj, false); //<<<<<< DSS: used to be true
   JSONDecoder::decode_json("roles", roles, obj);
 }
 
