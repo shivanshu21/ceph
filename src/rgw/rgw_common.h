@@ -1138,6 +1138,7 @@ class authorization_method {
 
 struct rgw_aws4_auth {
   string date;
+  string expires;
   string credential;
   string signedheaders;
   string signed_hdrs;
