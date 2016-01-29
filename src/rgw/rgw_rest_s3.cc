@@ -2281,7 +2281,8 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id, 
     return -EPERM;
   }
 
-  /* check if we have a valid role */
+  /* check if we have a valid role
+   * For now lets keep this code commented and see if it does the needful.
   bool found = false;
   list<string>::iterator iter;
   for (iter = roles_list.begin(); iter != roles_list.end(); ++iter) {
@@ -2292,7 +2293,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id, 
   if (!found) {
     ldout(cct, 5) << "s3 keystone: user does not hold a matching role; required roles: " << cct->_conf->rgw_keystone_accepted_roles << dendl;
     return -EPERM;
-  }
+  }*/
 
   /* everything seems fine, continue with this user */
   ldout(cct, 5) << "s3 keystone: validated token: " << response.token.tenant.name << ":" << response.user.name << " expires: " << response.token.expires << dendl;
