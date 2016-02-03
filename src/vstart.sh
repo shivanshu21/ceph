@@ -344,7 +344,6 @@ DAEMONOPTS="
         heartbeat file = $CEPH_OUT_DIR/\$name.heartbeat
 "
 
-
 if [ "$start_mon" -eq 1 ]; then
 
 	if [ "$new" -eq 1 ]; then
@@ -366,6 +365,8 @@ if [ "$start_mon" -eq 1 ]; then
         rgw frontends = fastcgi, civetweb port=$CEPH_RGW_PORT
         filestore fd cache size = 32
         run dir = $CEPH_OUT_DIR
+
+
 EOF
 if [ "$cephx" -eq 1 ] ; then
 cat <<EOF >> $conf_fn
@@ -672,6 +673,7 @@ if [ "$start_rgw" -eq 1 ]; then
     do_rgw
 fi
 
+echo "============================DONE==============================="
 echo "started.  stop.sh to stop.  see out/* (e.g. 'tail -f out/????') for debug output."
 
 echo ""
