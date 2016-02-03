@@ -542,7 +542,7 @@ static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWC
 
   req->log_init();
 
-  dout(1) << "====== starting new request req=" << hex << req << dec << " =====" << dendl;
+  
   perfcounter->inc(l_rgw_req);
 
   RGWEnv& rgw_env = client_io->get_env();
@@ -556,8 +556,8 @@ static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWC
 
   s->req_id = store->unique_id(req->id);
   s->trans_id = store->unique_trans_id(req->id);
-
-  req->log_format(s, "initializing for trans_id = %s", s->trans_id.c_str());
+  dout(1) << "====== starting new request trans="  << s->trans_id.c_str() << " =====" << dendl;
+  //req->log_format(s, "initializing for trans_id = %s", s->trans_id.c_str());
 
   RGWOp *op = NULL;
   int init_error = 0;
@@ -652,7 +652,7 @@ done:
     handler->put_op(op);
   rest->put_handler(handler);
 
-  dout(1) << "====== req done req=" << hex << req << dec << " http_status=" << http_ret << " ======" << dendl;
+  dout(1) << "====== req done trans=" << s->trans_id.c_str() << " http_status=" << http_ret << " ======" << dendl;
 
   return (ret < 0 ? ret : s->err.ret);
 }
