@@ -2286,7 +2286,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
     keystone_url.append("/");
   }
 
-  keystone_url.append("v3/s3tokens");
+  keystone_url.append("v3/sign-auth");
 
   dout(0) << "DSS INFO: Action string: " << action_str << dendl;
   dout(0) << "DSS INFO: Resource string: " << resource_str << dendl;
