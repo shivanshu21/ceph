@@ -2497,6 +2497,11 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
           auth_id = auth_str.substr(0, pos);
           auth_sign = auth_str.substr(pos + 1);
       }
+  } else {
+    // DSS console token validation:
+    // Don't want time skew check as tokens expire periodically
+    // keystone will take care of this
+    qsr = true;
   }
 
   /* try keystone auth first */
