@@ -1177,7 +1177,6 @@ int RGWPostObj_ObjStore_S3::get_policy()
                 return -EACCES;
             }
             dout(20) << "DSS keystone: trying keystone auth" << dendl;
-
             RGW_Auth_S3_Keystone_ValidateToken keystone_validator(store->ctx());
 
             // Get Resource info for keystone
@@ -2344,6 +2343,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
     dout(2) << "DSS ERROR: keystone:  signature response parsing failed" << dendl;
     return -EPERM;
   }
+  dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
 
   /* Check if the response is okay */
   if ((response.user.id).empty()   ||
@@ -2417,6 +2417,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
     dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
     return -EPERM;
   }
+  dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
 
   /* Check if the response is okay */
   if ((response.user.id).empty()   ||
