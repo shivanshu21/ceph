@@ -18,15 +18,15 @@
 #include "rgw_cors_s3.h"
 
 #include "rgw_client_io.h"
-
 #define dout_subsys ceph_subsys_rgw
 
 using namespace ceph::crypto;
 
 void list_all_buckets_start(struct req_state *s)
 {
+  //s->formatter->open_array_section_in_ns("ListAllMyBucketsResult", "http://s3.amazonaws.com/doc/2006-03-01/");
   s->formatter->open_array_section_in_ns("ListAllMyBucketsResult",
-			      "http://s3.amazonaws.com/doc/2006-03-01/");
+                                         "https://dss.ind-west-1.staging.jiocloudservices.com");
 }
 
 void list_all_buckets_end(struct req_state *s)
@@ -249,7 +249,7 @@ int RGWListBucket_ObjStore_S3::get_params()
 void RGWListBucket_ObjStore_S3::send_versioned_response()
 {
   s->formatter->open_object_section_in_ns("ListVersionsResult",
-					  "http://s3.amazonaws.com/doc/2006-03-01/");
+					  "https://dss.ind-west-1.staging.jiocloudservices.com");
   s->formatter->dump_string("Name", s->bucket_name_str);
   s->formatter->dump_string("Prefix", prefix);
   s->formatter->dump_string("KeyMarker", marker.name);
@@ -326,7 +326,7 @@ void RGWListBucket_ObjStore_S3::send_response()
   }
 
   s->formatter->open_object_section_in_ns("ListBucketResult",
-					  "http://s3.amazonaws.com/doc/2006-03-01/");
+					  "https://dss.ind-west-1.staging.jiocloudservices.com");
   s->formatter->dump_string("Name", s->bucket_name_str);
   s->formatter->dump_string("Prefix", prefix);
   s->formatter->dump_string("Marker", marker.name);
@@ -381,7 +381,7 @@ void RGWGetBucketLogging_ObjStore_S3::send_response()
   dump_start(s);
 
   s->formatter->open_object_section_in_ns("BucketLoggingStatus",
-					  "http://doc.s3.amazonaws.com/doc/2006-03-01/");
+					  "https://dss.ind-west-1.staging.jiocloudservices.com");
   s->formatter->close_section();
   rgw_flush_formatter_and_reset(s, s->formatter);
 }
@@ -405,7 +405,7 @@ void RGWGetBucketLocation_ObjStore_S3::send_response()
   }
 
   s->formatter->dump_format_ns("LocationConstraint",
-			       "http://doc.s3.amazonaws.com/doc/2006-03-01/",
+			       "https://dss.ind-west-1.staging.jiocloudservices.com",
 			       "%s",api_name.c_str());
   rgw_flush_formatter_and_reset(s, s->formatter);
 }
@@ -417,7 +417,7 @@ void RGWGetBucketVersioning_ObjStore_S3::send_response()
   dump_start(s);
 
   s->formatter->open_object_section_in_ns("VersioningConfiguration",
-					  "http://doc.s3.amazonaws.com/doc/2006-03-01/");
+					  "https://dss.ind-west-1.staging.jiocloudservices.com");
   if (versioned) {
     const char *status = (versioning_enabled ? "Enabled" : "Suspended");
     s->formatter->dump_string("Status", status);
@@ -1157,7 +1157,7 @@ int RGWPostObj_ObjStore_S3::get_policy()
         if (!isTokenBasedAuth) {
             // check that the signature matches the encoded policy
             if (!part_str("AWSAccessKeyId", &s3_access_key)) {
-                ldout(s->cct, 0) << "No S3 access key found!" << dendl;
+                ldout(s->cct, 0) << "No DSS access key found!" << dendl;
                 err_msg = "Missing access key";
                 return -EINVAL;
             }
@@ -1176,8 +1176,7 @@ int RGWPostObj_ObjStore_S3::get_policy()
                     store->ctx()->_conf->rgw_keystone_url.empty()) {
                 return -EACCES;
             }
-            dout(20) << "s3 keystone: trying keystone auth" << dendl;
-
+            dout(20) << "DSS keystone: trying keystone auth" << dendl;
             RGW_Auth_S3_Keystone_ValidateToken keystone_validator(store->ctx());
 
             // Get Resource info for keystone
@@ -1215,7 +1214,7 @@ int RGWPostObj_ObjStore_S3::get_policy()
                 return -EACCES;
             }
             user_info.user_id = keystone_validator.response.token.tenant.id;
-            user_info.display_name = keystone_validator.response.token.tenant.name;
+            user_info.display_name = keystone_validator.response.token.tenant.id; //<<<<<< DSS needs tenant.name
             /* try to store user if it not already exists */
             if (rgw_get_user_info_by_uid(store, keystone_validator.response.token.tenant.id, user_info) < 0) {
                 int ret = rgw_store_user_info(store, user_info, NULL, NULL, 0, true);
@@ -1747,7 +1746,7 @@ void RGWInitMultipart_ObjStore_S3::send_response()
   if (ret == 0) { 
     dump_start(s);
     s->formatter->open_object_section_in_ns("InitiateMultipartUploadResult",
-		  "http://s3.amazonaws.com/doc/2006-03-01/");
+		  "https://dss.ind-west-1.staging.jiocloudservices.com");
     s->formatter->dump_string("Bucket", s->bucket_name_str);
     s->formatter->dump_string("Key", s->object.name);
     s->formatter->dump_string("UploadId", upload_id);
@@ -1765,7 +1764,7 @@ void RGWCompleteMultipart_ObjStore_S3::send_response()
   if (ret == 0) { 
     dump_start(s);
     s->formatter->open_object_section_in_ns("CompleteMultipartUploadResult",
-			  "http://s3.amazonaws.com/doc/2006-03-01/");
+			  "https://dss.ind-west-1.staging.jiocloudservices.com");
     if (s->info.domain.length())
       s->formatter->dump_format("Location", "%s.%s", s->bucket_name_str.c_str(), s->info.domain.c_str());
     s->formatter->dump_string("Bucket", s->bucket_name_str);
@@ -1797,7 +1796,7 @@ void RGWListMultipart_ObjStore_S3::send_response()
   if (ret == 0) { 
     dump_start(s);
     s->formatter->open_object_section_in_ns("ListPartsResult",
-		    "http://s3.amazonaws.com/doc/2006-03-01/");
+		    "https://dss.ind-west-1.staging.jiocloudservices.com");
     map<uint32_t, RGWUploadPartInfo>::iterator iter;
     map<uint32_t, RGWUploadPartInfo>::reverse_iterator test_iter;
     int cur_max = 0;
@@ -1922,7 +1921,7 @@ void RGWDeleteMultiObj_ObjStore_S3::begin_response()
   dump_start(s);
   end_header(s, this, "application/xml");
   s->formatter->open_object_section_in_ns("DeleteResult",
-                                            "http://s3.amazonaws.com/doc/2006-03-01/");
+                                          "https://dss.ind-west-1.staging.jiocloudservices.com");
 
   rgw_flush_formatter(s, s->formatter);
 }
@@ -2278,6 +2277,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
   /* prepare keystone url */
   string action_str = "jrn:jcs:dss:";
   string resource_str = "jrn:jcs:dss:";
+  string implicit_allow = "False";
   action_str.append(action);
   resource_str.append(":Bucket:");
   resource_str.append(resource_name);
@@ -2293,7 +2293,6 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
   dout(0) << "DSS INFO: Final URL: " << keystone_url << dendl;
 
   /* set required headers for keystone request */
-  //append_header("X-Auth-Token", cct->_conf->rgw_keystone_admin_token);
   append_header("Content-Type", "application/json");
 
   /* encode token */
@@ -2302,44 +2301,66 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
   token_buff.append(auth_token);
   token_buff.encode_base64(token_encoded);
   token_encoded.append((char)0);
+  string cannonical_str(token_encoded.c_str());
+
+  dout(0) << "DSS INFO: Signature: " << auth_sign << dendl;
+  dout(0) << "DSS INFO: Canonical str: " << cannonical_str << dendl;
 
   /* create json credentials request body */
   JSONFormatter credentials(false);
   credentials.open_object_section("");
   credentials.open_object_section("credentials");
-  credentials.dump_string("access", auth_id);
-  credentials.dump_string("token", token_encoded.c_str());
-  credentials.dump_string("signature", auth_sign);
-  credentials.open_object_section("action_resource_list");
+  credentials.dump_string("access", auth_id.c_str());
+  credentials.dump_string("token", cannonical_str.c_str());
+  credentials.dump_string("signature", auth_sign.c_str());
+  credentials.open_array_section("action_resource_list");
+  credentials.open_object_section("");
   credentials.dump_string("action", action_str.c_str());
   credentials.dump_string("resource", resource_str.c_str());
-  credentials.dump_string("implicit_allow", "False");
+  credentials.dump_string("implicit_allow", implicit_allow.c_str());
+  credentials.close_section();
   credentials.close_section();
   credentials.close_section();
   credentials.close_section();
   std::stringstream os;
   credentials.flush(os);
   set_tx_buffer(os.str());
+  dout(0) << "DSS INFO: Outbound json: " << os.str() << dendl;
 
   /* send request */
+  const clock_t begin_time = clock();
   int ret = process("POST", keystone_url.c_str());
+  float ticks = ((clock () - begin_time) * 1000) /  CLOCKS_PER_SEC;
+  dout(0) << "DSS INFO: Keystone response time (milliseconds): " << ticks << dendl;
   if (ret < 0) {
-    dout(2) << "s3 keystone: token validation ERROR: " << rx_buffer.c_str() << dendl;
-    return -EPERM;
-  }
-
-  /* now parse response */
-  if (response.parse(cct, rx_buffer) < 0) {
-    dout(2) << "s3 keystone: token parsing failed" << dendl;
+    dout(2) << "DSS ERROR: keystone: signature validation ERROR: " << rx_buffer.c_str() << dendl;
     return -EPERM;
   }
   dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
 
+  /* now parse response */
+  if (response.parse(cct, rx_buffer) < 0) {
+    dout(2) << "DSS ERROR: keystone:  signature response parsing failed" << dendl;
+    return -EPERM;
+  }
+  dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
+
+  /* Check if the response is okay */
+  if ((response.user.id).empty()   ||
+      (response.token.tenant.id).empty()) {
+      dout(0) << "DSS ERROR: Response empty. "
+              << " Root account ID: "
+              << response.token.tenant.id.c_str()
+              << " User ID: "
+              << response.user.id.c_str()
+              << dendl;
+      return -EPERM;
+  }
+
   /* everything seems fine, continue with this user */
-  ldout(cct, 5) << "s3 keystone: validated token: "
-                << response.token.tenant.name << ":"
-                << response.user.name << " expires: "
-                << response.token.expires << dendl;
+  ldout(cct, 5) << "DSS INFO: keystone validated signature for (root account id : user id) "
+                << response.token.tenant.id << ":"
+                << response.user.id << dendl;
   return 0;
 }
 
@@ -2376,30 +2397,44 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
 
   /* set required headers for keystone request */
   append_header("X-Auth-Token", token);
-  //append_header("X-Subject-Token", token);
   append_header("Content-Type", "application/json");
+  set_tx_buffer("{ }"); // DSS: Need a blank json else IAM will reject
 
   /* send request */
+  const clock_t begin_time = clock();
   int ret = process("GET", keystone_url.c_str());
+  float ticks = ((clock () - begin_time) * 1000) /  CLOCKS_PER_SEC;
+  dout(0) << "DSS INFO: Keystone response time (milliseconds): " << ticks << dendl;
   if (ret < 0) {
-    dout(0) << "DSS INFO: Token keystone: token validation ERROR: " << rx_buffer.c_str() << dendl;
-    dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
+    dout(0) << "DSS ERROR: Token keystone: token validation ERROR: " << rx_buffer.c_str() << dendl;
     return -EPERM;
   }
+  dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
 
   /* now parse response */
   if (response.parse(cct, rx_buffer) < 0) {
-    dout(0) << "DSS INFO: Token keystone: token parsing failed" << dendl;
+    dout(0) << "DSS ERROR: Token keystone: token parsing failed" << dendl;
     dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
     return -EPERM;
   }
   dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
 
+  /* Check if the response is okay */
+  if ((response.user.id).empty()   ||
+      (response.token.tenant.id).empty()) {
+      dout(0) << "DSS ERROR: Response empty. "
+              << " Root account ID: "
+              << response.token.tenant.id.c_str()
+              << " User ID: "
+              << response.user.id.c_str()
+              << dendl;
+      return -EPERM;
+  }
+
   /* everything seems fine, continue with this user */
-  ldout(cct, 5) << "DSS INFO: Token keystone: validated token: "
-                << response.token.tenant.name << ":"
-                << response.user.name << " expires: "
-                << response.token.expires << dendl;
+  ldout(cct, 5) << "DSS INFO: keystone validated token for (root account id : user id) "
+                << response.token.tenant.id << ":"
+                << response.user.id << dendl;
   return 0;
 }
 
@@ -2463,13 +2498,18 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
           auth_id = auth_str.substr(0, pos);
           auth_sign = auth_str.substr(pos + 1);
       }
+  } else {
+    // DSS console token validation:
+    // Don't want time skew check as tokens expire periodically
+    // keystone will take care of this
+    qsr = true;
   }
 
   /* try keystone auth first */
   int keystone_result = -EINVAL;
   if (store->ctx()->_conf->rgw_s3_auth_use_keystone
       && !store->ctx()->_conf->rgw_keystone_url.empty()) {
-    dout(20) << "s3 keystone: trying keystone auth" << dendl;
+    dout(20) << "DSS INFO: keystone: trying keystone auth" << dendl;
 
     RGW_Auth_S3_Keystone_ValidateToken keystone_validator(store->ctx());
     string token;
@@ -2516,7 +2556,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
 	}
 
 	s->user.user_id = keystone_validator.response.token.tenant.id;
-        s->user.display_name = keystone_validator.response.token.tenant.name; // wow.
+        s->user.display_name = keystone_validator.response.token.tenant.id; // wow. //<<<<<< DSS needs tenant.name
 
         /* try to store user if it not already exists */
         if (rgw_get_user_info_by_uid(store, keystone_validator.response.token.tenant.id, s->user) < 0) {
@@ -2667,8 +2707,10 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
         //get_all_buckets() case
         if (bucket_str.empty()) {
             fail_reason = "No bucket received. This is the get all buckets case.";
-            // Populate action string
+            // Populate action string and resource name
+            string allResources("*");
             setAction("ListAllMyBuckets");
+            setResourceName(allResources);
             return 0;
         }
 
