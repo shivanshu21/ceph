@@ -733,6 +733,15 @@ static int civetweb_callback(struct mg_connection *conn) {
               // Keystone will handle the rest
               (store->auth_method).set_token(value_str);
           }
+          if (((name_str.compare("x-amz-metadata-directive") == 0) &&
+              (value_str.compare("COPY") == 0)) || (name_str.compare("x-amz-copy-source") == 0)) {
+              // Mark the bool value if this request if for COPY.
+              // If the copy source is provided, store that. Else, down the line throw an error.
+              (store->auth_method).set_copy_action(true);
+              if ((name_str.compare("x-amz-copy-source") == 0)) {
+                  (store->auth_method).set_copy_source(value_str);
+              }
+          }
       }
   }
   dout(1) << "DSS INFO: token validation set to: " << (store->auth_method).get_token_validation() << dendl;
