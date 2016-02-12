@@ -1149,6 +1149,8 @@ int RGWPostObj_ObjStore_S3::get_policy()
     bufferlist encoded_policy;
     bool isTokenBasedAuth = (store->auth_method).get_token_validation();
     (store->auth_method).set_token_validation(false);
+    bool isCopyAction = (store->auth_method).get_copy_action();
+    (store->auth_method).set_copy_action(false);
     RGWUserInfo user_info;
     string received_signature_str;
     string s3_access_key;
@@ -1181,7 +1183,7 @@ int RGWPostObj_ObjStore_S3::get_policy()
 
             // Get Resource info for keystone
             string errmsg;
-            RGWResourceKeystoneInfo resource_info(s, store);
+            RGWResourceKeystoneInfo resource_info(s, store, isCopyAction);
             if(resource_info.fetchInfo(errmsg)) {
                 dout(1) << "DSS Error: " << errmsg << dendl;
                 return -EACCES;
@@ -2450,6 +2452,12 @@ static void init_anon_user(struct req_state *s)
  */
 int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
 {
+  // Get request header related DSS info and clear flags
+  bool isTokenBasedAuth = (store->auth_method).get_token_validation();
+  (store->auth_method).set_token_validation(false);
+  bool isCopyAction = (store->auth_method).get_copy_action();
+  (store->auth_method).set_copy_action(false);
+
   bool qsr = false;
   string auth_id;
   string auth_sign;
@@ -2469,8 +2477,6 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
     return 0;
   }
 
-  bool isTokenBasedAuth = (store->auth_method).get_token_validation();
-  (store->auth_method).set_token_validation(false);
 
   if (!isTokenBasedAuth) {
       if (!s->http_auth || !(*s->http_auth)) {
@@ -2521,7 +2527,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
 
       // Get Resource info for keystone
       string errmsg;
-      RGWResourceKeystoneInfo resource_info(s, store);
+      RGWResourceKeystoneInfo resource_info(s, store, isCopyAction);
       if(resource_info.fetchInfo(errmsg)) {
           dout(0) << "DSS Error: " << errmsg << dendl;
           return -EACCES;
@@ -2691,12 +2697,15 @@ RGWHandler *RGWRESTMgr_S3::get_handler(struct req_state *s)
 uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
 {
     string resource_name;
+    string query_str;
     int ret = 0;
     fail_reason = "OK";
     bool obj_action = false;
+    int special_action = RGWResourceKeystoneInfo::_none;
 
-    // Populate tenant name and resource name
+    // Populate tenant name, resource name and query string
     resource_name = (_s->info).request_uri;
+    query_str     = (_s->info).request_params;
     RGWObjectCtx& obj_ctx = *(RGWObjectCtx *)_s->obj_ctx;
     if (!resource_name.empty()) {
         const char *src = resource_name.c_str();
@@ -2709,13 +2718,19 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
             fail_reason = "No bucket received. This is the get all buckets case.";
             // Populate action string and resource name
             string allResources("*");
-            setAction("ListAllMyBuckets");
             setResourceName(allResources);
+            special_action = RGWResourceKeystoneInfo::_list_all_buckets;
+            obj_action = false;
+            if (fetchActionString(_s->op, obj_action, special_action, fail_reason)) {
+                dout(0) << "DSS ERROR: Failed to fetch action string. Reason: " << fail_reason << dendl;
+                fail_reason = "Failed to fetch action string. Reason: " + fail_reason;
+                return -1;
+            }
             return 0;
         }
 
         int pos = bucket_str.find('/');
-        if ((pos < (bucket_str.length() - 1)) && (pos > 0)) {
+        if ((pos < ((signed)bucket_str.length() - 1)) && (pos > 0)) {
             // If you found a pos for '/' and its not at the end like
             // "path/". If its in between "path/a"
             obj_action = true;
@@ -2742,8 +2757,16 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
         return -1;
     }
 
+    if (getCopyAction()) {
+        special_action = RGWResourceKeystoneInfo::_copy_action;
+    } else if (query_str.compare("uploads") == 0) {
+        special_action = RGWResourceKeystoneInfo::_multipart_upload;
+    } else if (query_str.compare(0, 8, "uploadId") == 0) {
+        special_action = RGWResourceKeystoneInfo::_multipart_id_action;
+    }
+
     // Populate action string
-    if (fetchActionString(_s->op, obj_action, fail_reason)) {
+    if (fetchActionString(_s->op, obj_action, special_action, fail_reason)) {
         dout(0) << "DSS ERROR: Failed to fetch action string. Reason: " << fail_reason << dendl;
         fail_reason = "Failed to fetch action string. Reason: " + fail_reason;
         return -1;
@@ -2757,7 +2780,10 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
  *
  * Populates action based of OP number
  */
-uint32_t RGWResourceKeystoneInfo::fetchActionString(uint32_t op, bool object_action, string& fail_reason)
+uint32_t RGWResourceKeystoneInfo::fetchActionString(uint32_t op,
+                                                    bool     object_action,
+                                                    int      special_action,
+                                                    string&  fail_reason)
 {
     fail_reason = "OK";
 
@@ -2775,11 +2801,49 @@ uint32_t RGWResourceKeystoneInfo::fetchActionString(uint32_t op, bool object_act
         }
     }
 
-    // Increase the index for object actions
+    // Handle special actions that do not match their HTTP verbs
+    if (special_action == RGWResourceKeystoneInfo::_copy_action) {
+        setAction("CopyObject");
+        return 0;
+    } else if (special_action == RGWResourceKeystoneInfo::_list_all_buckets) {
+        setAction("ListAllMyBuckets");
+        return 0;
+    } else if (special_action == RGWResourceKeystoneInfo::_multipart_upload) {
+        if (op == OP_GET) {
+            //List active multipart uploads on a bucket
+            setAction("ListBucketMultipartUploads");
+        } else if (op == OP_POST) {
+            //Initiate multipart upload
+            setAction("PutObject");
+        } else {
+            fail_reason = "Bad action requested";
+            return -1;
+        }
+        return 0;
+    } else if (special_action == RGWResourceKeystoneInfo::_multipart_id_action) {
+        if (op == OP_PUT) {
+            //Upload single part in a multipart upload req
+            setAction("PutObject");
+        } else if (op == OP_POST) {
+            //Complete multipart upload
+            setAction("PutObject");
+        } else if (op == OP_DELETE) {
+            //Delete multipart upload
+            setAction("AbortMultipartUpload");
+        } else if (op == OP_GET) {
+            //List multipart upload parts
+            setAction("ListMultipartUploadParts");
+        } else {
+            fail_reason = "Bad action requested";
+            return -1;
+        }
+        return 0;
+    }
+
+    // Handle everything else
     if (object_action) {
         op += DSS_KEYSTONE_MAX_ACTIONS;
     }
-
     setAction(ACTIONS[op]);
     return 0;
 }

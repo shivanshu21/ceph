@@ -797,7 +797,7 @@ void KeystoneToken::Service::decode_json(JSONObj *obj)
 
 void KeystoneToken::Token::Tenant::decode_json(JSONObj *obj)
 {
-  JSONDecoder::decode_json("domain_id", id, obj, true); //<<<<<< DSS: Used to be "tenant"
+  JSONDecoder::decode_json("account_id", id, obj, true); //<<<<<< DSS: Used to be "tenant"
   JSONDecoder::decode_json("name", name, obj, false);   //<<<<<< DSS: used to be true
   JSONDecoder::decode_json("description", description, obj);
   JSONDecoder::decode_json("enabled", enabled, obj);

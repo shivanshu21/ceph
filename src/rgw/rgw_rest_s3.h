@@ -467,6 +467,7 @@ class RGWResourceKeystoneInfo {
         string _action;
         struct req_state* _s;
         RGWRados*  _store;
+        bool _copy_req;
 
         // Based on Enum http_op in rgw_common.h
         const string ACTIONS[2 * DSS_KEYSTONE_MAX_ACTIONS] = {
@@ -474,11 +475,11 @@ class RGWResourceKeystoneInfo {
             "CreateBucket",
             "DeleteBucket",
             "HeadBucket",     // Permission same as get
-            "PostBucket",
+            "PostBucket",     // Not supported but needed
             "CopyBucket",     // Not supported but needed
             "OptionsBucket",  // Not supported but needed
             "GetObject",
-            "CreateObject",
+            "PutObject",
             "DeleteObject",
             "HeadObject",     // Permission same as Get
             "PostObject",
@@ -487,8 +488,8 @@ class RGWResourceKeystoneInfo {
         };
 
     public:
-        RGWResourceKeystoneInfo(struct req_state *s, RGWRados *store) :
-            _s(s), _store(store) { }
+        RGWResourceKeystoneInfo(struct req_state *s, RGWRados *store, bool copyAction) :
+            _s(s), _store(store), _copy_req(copyAction) { }
         ~RGWResourceKeystoneInfo() { }
 
         inline string getTenantName()
@@ -515,9 +516,28 @@ class RGWResourceKeystoneInfo {
         {
             _action = action;
         }
+        inline bool getCopyAction()
+        {
+            return _copy_req;
+        }
+        inline void setCopyAction(bool action)
+        {
+            _copy_req = action;
+        }
+
+        enum specialActions {
+            _none = 0,
+            _list_all_buckets,
+            _multipart_upload,
+            _multipart_id_action,
+            _copy_action
+        };
 
         uint32_t fetchInfo(string& fail_reason);
-        uint32_t fetchActionString(uint32_t op, bool object_action, string& fail_reason);
+        uint32_t fetchActionString(uint32_t op,
+                                   bool object_action,
+                                   int special_action,
+                                   string& fail_reason);
 };
 
 #endif
