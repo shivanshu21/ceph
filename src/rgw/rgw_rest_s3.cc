@@ -2718,8 +2718,14 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
             fail_reason = "No bucket received. This is the get all buckets case.";
             // Populate action string and resource name
             string allResources("*");
-            setAction("ListAllMyBuckets");
             setResourceName(allResources);
+            special_action = RGWResourceKeystoneInfo::_list_all_buckets;
+            obj_action = false;
+            if (fetchActionString(_s->op, obj_action, special_action, fail_reason)) {
+                dout(0) << "DSS ERROR: Failed to fetch action string. Reason: " << fail_reason << dendl;
+                fail_reason = "Failed to fetch action string. Reason: " + fail_reason;
+                return -1;
+            }
             return 0;
         }
 
@@ -2753,8 +2759,11 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
 
     if (getCopyAction()) {
         special_action = RGWResourceKeystoneInfo::_copy_action;
+    } else if (query_str.compare("uploads") == 0) {
+        special_action = RGWResourceKeystoneInfo::_multipart_upload;
+    } else if (query_str.compare(0, 8, "uploadId") == 0) {
+        special_action = RGWResourceKeystoneInfo::_multipart_id_action;
     }
-    // else if Handle multipart uploads by parsing query string <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
     // Populate action string
     if (fetchActionString(_s->op, obj_action, special_action, fail_reason)) {
@@ -2792,16 +2801,49 @@ uint32_t RGWResourceKeystoneInfo::fetchActionString(uint32_t op,
         }
     }
 
+    // Handle special actions that do not match their HTTP verbs
     if (special_action == RGWResourceKeystoneInfo::_copy_action) {
         setAction("CopyObject");
         return 0;
+    } else if (special_action == RGWResourceKeystoneInfo::_list_all_buckets) {
+        setAction("ListAllMyBuckets");
+        return 0;
+    } else if (special_action == RGWResourceKeystoneInfo::_multipart_upload) {
+        if (op == OP_GET) {
+            //List active multipart uploads on a bucket
+            setAction("ListBucketMultipartUploads");
+        } else if (op == OP_POST) {
+            //Initiate multipart upload
+            setAction("PutObject");
+        } else {
+            fail_reason = "Bad action requested";
+            return -1;
+        }
+        return 0;
+    } else if (special_action == RGWResourceKeystoneInfo::_multipart_id_action) {
+        if (op == OP_PUT) {
+            //Upload single part in a multipart upload req
+            setAction("PutObject");
+        } else if (op == OP_POST) {
+            //Complete multipart upload
+            setAction("PutObject");
+        } else if (op == OP_DELETE) {
+            //Delete multipart upload
+            setAction("AbortMultipartUpload");
+        } else if (op == OP_GET) {
+            //List multipart upload parts
+            setAction("ListMultipartUploadParts");
+        } else {
+            fail_reason = "Bad action requested";
+            return -1;
+        }
+        return 0;
     }
 
-    // Increase the index for object actions
+    // Handle everything else
     if (object_action) {
         op += DSS_KEYSTONE_MAX_ACTIONS;
     }
-
     setAction(ACTIONS[op]);
     return 0;
 }

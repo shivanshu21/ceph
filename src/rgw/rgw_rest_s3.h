@@ -467,7 +467,7 @@ class RGWResourceKeystoneInfo {
         string _action;
         struct req_state* _s;
         RGWRados*  _store;
-        bool _copy_action;
+        bool _copy_req;
 
         // Based on Enum http_op in rgw_common.h
         const string ACTIONS[2 * DSS_KEYSTONE_MAX_ACTIONS] = {
@@ -489,7 +489,7 @@ class RGWResourceKeystoneInfo {
 
     public:
         RGWResourceKeystoneInfo(struct req_state *s, RGWRados *store, bool copyAction) :
-            _s(s), _store(store), _copy_action(copyAction) { }
+            _s(s), _store(store), _copy_req(copyAction) { }
         ~RGWResourceKeystoneInfo() { }
 
         inline string getTenantName()
@@ -518,11 +518,11 @@ class RGWResourceKeystoneInfo {
         }
         inline bool getCopyAction()
         {
-            return _copy_action;
+            return _copy_req;
         }
         inline void setCopyAction(bool action)
         {
-            _copy_action = action;
+            _copy_req = action;
         }
 
         enum specialActions {
