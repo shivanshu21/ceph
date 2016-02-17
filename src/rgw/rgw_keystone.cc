@@ -33,7 +33,8 @@ int KeystoneToken::parse(CephContext *cct, bufferlist& bl)
   }
 
   try {
-    JSONDecoder::decode_json("access", *this, &parser);
+    (*this).token.tenant.decode_json(&parser);
+    (*this).user.decode_json(&parser);
   } catch (JSONDecoder::err& err) {
     ldout(cct, 0) << "Keystone token parse error: " << err.message << dendl;
     return -EINVAL;
