@@ -505,9 +505,9 @@ static void dump_bucket_metadata(struct req_state *s, RGWBucketEnt& bucket)
 {
   char buf[32];
   snprintf(buf, sizeof(buf), "%lld", (long long)bucket.count);
-  s->cio->print("X-RGW-Object-Count: %s\r\n", buf);
+  s->cio->print("x-jcs-Object-Count: %s\r\n", buf); //<<<<<< X-RGW-
   snprintf(buf, sizeof(buf), "%lld", (long long)bucket.size);
-  s->cio->print("X-RGW-Bytes-Used: %s\r\n", buf);
+  s->cio->print("x-jcs-Bytes-Used: %s\r\n", buf);
 }
 
 void RGWStatBucket_ObjStore_S3::send_response()
@@ -1196,14 +1196,16 @@ int RGWPostObj_ObjStore_S3::get_policy()
                 keystone_result = keystone_validator.validate_consoleToken(resource_info.getAction(),
                         resource_info.getResourceName(),
                         resource_info.getTenantName(),
-                        (store->auth_method).get_token());
+                        (store->auth_method).get_token(),
+                        resource_info.getCopySrc());
             } else {
                 keystone_result = keystone_validator.validate_s3token(s3_access_key,
                         string(encoded_policy.c_str(),encoded_policy.length()),
                         received_signature_str,
                         resource_info.getAction(),
                         resource_info.getResourceName(),
-                        resource_info.getTenantName());
+                        resource_info.getTenantName(),
+                        resource_info.getCopySrc());
             }
 
             if (keystone_result < 0) {
@@ -1458,10 +1460,10 @@ void RGWDeleteObj_ObjStore_S3::send_response()
   set_req_state_err(s, r);
   dump_errno(s);
   if (!version_id.empty()) {
-    dump_string_header(s, "x-amz-version-id", version_id.c_str());
+    dump_string_header(s, "x-jcs-version-id", version_id.c_str());
   }
   if (delete_marker) {
-    dump_string_header(s, "x-amz-delete-marker", "true");
+    dump_string_header(s, "x-jcs-delete-marker", "true");
   }
   end_header(s, this);
 }
@@ -2273,21 +2275,32 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
                                                          const string& auth_sign,
                                                          const string& action,
                                                          const string& resource_name,
-                                                         const string& tenant_name)
+                                                         const string& tenant_name,
+                                                         const string& copy_src)
 {
+  /* Handle special case of copy */
+  bool isCopyAction = false;
+  isCopyAction = (action.compare("CopyObject") == 0);
 
   /* prepare keystone url */
   string action_str = "jrn:jcs:dss:";
+  string copy_action_str = "jrn:jcs:dss:GetObject";
   string resource_str = "jrn:jcs:dss:";
+  string copy_resource_str = "jrn:jcs:dss:";
   string implicit_allow = "False";
-  action_str.append(action);
+  if (isCopyAction) {
+      action_str.append("PutObject");
+  } else {
+      action_str.append(action);
+  }
   resource_str.append(":Bucket:");
+  copy_resource_str.append(":Bucket:");
   resource_str.append(resource_name);
+  copy_resource_str.append(copy_src);
   string keystone_url = cct->_conf->rgw_keystone_url;
   if (keystone_url[keystone_url.size() - 1] != '/') {
     keystone_url.append("/");
   }
-
   keystone_url.append("v3/sign-auth");
 
   dout(0) << "DSS INFO: Action string: " << action_str << dendl;
@@ -2321,6 +2334,13 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
   credentials.dump_string("resource", resource_str.c_str());
   credentials.dump_string("implicit_allow", implicit_allow.c_str());
   credentials.close_section();
+  if (isCopyAction) {
+      credentials.open_object_section("");
+      credentials.dump_string("action", copy_action_str.c_str());
+      credentials.dump_string("resource", copy_resource_str.c_str());
+      credentials.dump_string("implicit_allow", implicit_allow.c_str());
+      credentials.close_section();
+  }
   credentials.close_section();
   credentials.close_section();
   credentials.close_section();
@@ -2373,8 +2393,74 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
 int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& action,
                                                               const string& resource_name,
                                                               const string& tenant_name,
-                                                              const string& token)
+                                                              const string& token,
+                                                              const string& copy_src)
 {
+  /* Handle special case of copy */
+  bool isCopyAction = false;
+  isCopyAction = (action.compare("CopyObject") == 0);
+
+  /* set required headers for keystone request */
+  append_header("X-Auth-Token", token);
+  append_header("Content-Type", "application/json");
+  set_tx_buffer("{ }"); // DSS: Need a blank json else IAM will reject
+
+
+  if (isCopyAction) {
+      /* prepare keystone url For copy source action */
+      string action_str = "jrn:jcs:dss:";
+      string resource_str = "jrn:jcs:dss:";
+      action_str.append("ListBucket");
+      resource_str.append(":Bucket:");
+      resource_str.append(copy_src);
+      string keystone_url = cct->_conf->rgw_keystone_url;
+      if (keystone_url[keystone_url.size() - 1] != '/') {
+          keystone_url.append("/");
+      }
+
+      keystone_url.append("v3/token-auth");
+      keystone_url.append("?action=");
+      keystone_url.append(action_str);
+      keystone_url.append("&resource=");
+      keystone_url.append(resource_str);
+
+      dout(0) << "DSS INFO COPY SRC: Validating token" << dendl;
+      dout(0) << "DSS INFO COPY SRC: Action string: " << action_str << dendl;
+      dout(0) << "DSS INFO COPY SRC: Resource string: " << resource_str << dendl;
+      dout(0) << "DSS INFO COPY SRC: Final URL: " << keystone_url << dendl;
+
+      /* send request */
+      const clock_t begin_time = clock();
+      int ret = process("POST", keystone_url.c_str());
+      float ticks = ((clock () - begin_time) * 1000) /  CLOCKS_PER_SEC;
+      dout(0) << "DSS INFO COPY SRC: Keystone response time (milliseconds): " << ticks << dendl;
+      if (ret < 0) {
+          dout(0) << "DSS ERROR COPY SRC: Token keystone: token validation ERROR: " << rx_buffer.c_str() << dendl;
+          return -EPERM;
+      }
+      dout(0) << "DSS INFO COPY SRC: Printing RX buffer: " << rx_buffer.c_str() << dendl;
+
+      /* now parse response */
+      if (response.parse(cct, rx_buffer) < 0) {
+          dout(0) << "DSS ERROR COPY SRC: Token keystone: token parsing failed" << dendl;
+          dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
+          return -EPERM;
+      }
+      dout(0) << "DSS INFO COPY SRC: Printing RX buffer: " << rx_buffer.c_str() << dendl;
+
+      /* Check if the response is okay */
+      if ((response.user.id).empty()   ||
+              (response.token.tenant.id).empty()) {
+          dout(0) << "DSS ERROR COPY SRC: Response empty. "
+              << " Root account ID: "
+              << response.token.tenant.id.c_str()
+              << " User ID: "
+              << response.user.id.c_str()
+              << dendl;
+          return -EPERM;
+      }
+  }
+
   /* prepare keystone url */
   string action_str = "jrn:jcs:dss:";
   string resource_str = "jrn:jcs:dss:";
@@ -2397,14 +2483,9 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
   dout(0) << "DSS INFO: Resource string: " << resource_str << dendl;
   dout(0) << "DSS INFO: Final URL: " << keystone_url << dendl;
 
-  /* set required headers for keystone request */
-  append_header("X-Auth-Token", token);
-  append_header("Content-Type", "application/json");
-  set_tx_buffer("{ }"); // DSS: Need a blank json else IAM will reject
-
   /* send request */
   const clock_t begin_time = clock();
-  int ret = process("GET", keystone_url.c_str());
+  int ret = process("POST", keystone_url.c_str());
   float ticks = ((clock () - begin_time) * 1000) /  CLOCKS_PER_SEC;
   dout(0) << "DSS INFO: Keystone response time (milliseconds): " << ticks << dendl;
   if (ret < 0) {
@@ -2457,6 +2538,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
   (store->auth_method).set_token_validation(false);
   bool isCopyAction = (store->auth_method).get_copy_action();
   (store->auth_method).set_copy_action(false);
+  //string copyStr = (store->auth_method).get_copy_source();
 
   bool qsr = false;
   string auth_id;
@@ -2541,14 +2623,16 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
           keystone_result = keystone_validator.validate_consoleToken(resource_info.getAction(),
                                                                      resource_info.getResourceName(),
                                                                      resource_info.getTenantName(),
-                                                                     (store->auth_method).get_token());
+                                                                     (store->auth_method).get_token(),
+                                                                     resource_info.getCopySrc());
       } else {
           keystone_result = keystone_validator.validate_s3token(auth_id,
                                                                 token,
                                                                 auth_sign,
                                                                 resource_info.getAction(),
                                                                 resource_info.getResourceName(),
-                                                                resource_info.getTenantName());
+                                                                resource_info.getTenantName(),
+                                                                resource_info.getCopySrc());
       }
 
       if (keystone_result == 0) {
@@ -2704,8 +2788,10 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
     int special_action = RGWResourceKeystoneInfo::_none;
 
     // Populate tenant name, resource name and query string
-    resource_name = (_s->info).request_uri;
-    query_str     = (_s->info).request_params;
+    resource_name  = (_s->info).request_uri;
+    query_str      = (_s->info).request_params;
+    string copyStr = (_store->auth_method).get_copy_source();
+
     RGWObjectCtx& obj_ctx = *(RGWObjectCtx *)_s->obj_ctx;
     if (!resource_name.empty()) {
         const char *src = resource_name.c_str();
@@ -2759,6 +2845,15 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
 
     if (getCopyAction()) {
         special_action = RGWResourceKeystoneInfo::_copy_action;
+        int pos = copyStr.find('/');
+        if (pos > 0) {
+            copyStr = copyStr.substr(0, pos);
+            setCopySrc(copyStr);
+        } else {
+            // Invalid format for x-jcs-copy-source header
+            fail_reason = "Invalid format for x-jcs-copy-source header";
+            return -1;
+        }
     } else if (query_str.compare("uploads") == 0) {
         special_action = RGWResourceKeystoneInfo::_multipart_upload;
     } else if (query_str.compare(0, 8, "uploadId") == 0) {
