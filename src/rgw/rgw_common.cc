@@ -140,7 +140,7 @@ void req_info::rebuild_from(req_info& src)
   host = src.host;
 
   x_meta_map = src.x_meta_map;
-  x_meta_map.erase("x-amz-date");
+  x_meta_map.erase("x-jcs-date");
 }
 
 
