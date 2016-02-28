@@ -501,7 +501,7 @@ void dump_trans_id(req_state *s)
     s->cio->print("X-Trans-Id: %s\r\n", s->trans_id.c_str());
   }
   else {
-    s->cio->print("x-amz-request-id: %s\r\n", s->trans_id.c_str());
+    s->cio->print("x-jcs-request-id: %s\r\n", s->trans_id.c_str());
   }
 }
 
