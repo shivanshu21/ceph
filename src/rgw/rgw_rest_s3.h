@@ -344,12 +344,14 @@ public:
                        const string& auth_sign,
                        const string& action,
                        const string& resource_name,
-                       const string& tenant_name);
+                       const string& tenant_name,
+                       const string& copy_src);
 
   int validate_consoleToken(const string& action,
                             const string& resource_name,
                             const string& tenant_name,
-                            const string& token);
+                            const string& token,
+                            const string& copy_src);
 };
 
 class RGW_Auth_S3 {
@@ -468,6 +470,7 @@ class RGWResourceKeystoneInfo {
         struct req_state* _s;
         RGWRados*  _store;
         bool _copy_req;
+        string _copy_src;
 
         // Based on Enum http_op in rgw_common.h
         const string ACTIONS[2 * DSS_KEYSTONE_MAX_ACTIONS] = {
@@ -483,7 +486,7 @@ class RGWResourceKeystoneInfo {
             "DeleteObject",
             "HeadObject",     // Permission same as Get
             "PostObject",
-            "CopyObject",
+            "CopyObject",     // Handled differently. Needed.
             "OptionsObject"   // Not supported but needed
         };
 
@@ -523,6 +526,14 @@ class RGWResourceKeystoneInfo {
         inline void setCopyAction(bool action)
         {
             _copy_req = action;
+        }
+        inline string getCopySrc()
+        {
+            return _copy_src;
+        }
+        inline void setCopySrc(string& cpysrc)
+        {
+            _copy_src = cpysrc;
         }
 
         enum specialActions {
