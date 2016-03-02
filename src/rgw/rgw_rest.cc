@@ -486,6 +486,14 @@ void dump_access_control(req_state *s, RGWOp *op)
   dump_access_control(s, origin.c_str(), method.c_str(), header.c_str(), exp_header.c_str(), max_age);
 }
 
+
+/* This method dumps the CORS headers for web console */
+void dump_access_control_for_console(req_state *s)
+{
+  unsigned max_age = CORS_MAX_AGE_INVALID;
+  dump_access_control(s, JCS_CORS_CONSOLE_DOMAIN, JCS_CORS_CONSOLE_METHODS, NULL, NULL, max_age);
+}
+
 void dump_start(struct req_state *s)
 {
   if (!s->content_started) {
@@ -515,6 +523,21 @@ void end_header(struct req_state *s, RGWOp *op, const char *content_type, const 
   if (op) {
     dump_access_control(s, op);
   }
+
+  /* Send CORS headers for console
+   * This is a dirty hack to make object download work from console for the time
+   * being. This will be deprecated when presigned URLs using token or CORS support
+   * is implemented.
+   * 
+   * if there is no error in request and the request has token authentication, send 
+   * hardcoded CORS response headers
+   */
+
+  RGWObjectCtx* obj_ctx = (RGWObjectCtx*) s->obj_ctx;
+  if(!(s->err.is_err()) && obj_ctx->store->auth_method.get_token_validation()) {
+    dump_access_control_for_console(s);
+  }
+
 
   if (s->prot_flags & RGW_REST_SWIFT && !content_type) {
     force_content_type = true;

@@ -34,6 +34,8 @@
                          RGW_CORS_COPY)
 
 #define CORS_MAX_AGE_INVALID ((uint32_t)-1)
+#define JCS_CORS_CONSOLE_DOMAIN "console.jcs.com"
+#define JCS_CORS_CONSOLE_METHODS "GET, PUT, HEAD, POST, DELETE, COPY"
 
 class RGWCORSRule
 {
