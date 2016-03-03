@@ -1148,7 +1148,7 @@ int RGWPostObj_ObjStore_S3::get_policy()
 {
     bufferlist encoded_policy;
     bool isTokenBasedAuth = (store->auth_method).get_token_validation();
-    (store->auth_method).set_token_validation(false);
+    //(store->auth_method).set_token_validation(false);
     bool isCopyAction = (store->auth_method).get_copy_action();
     (store->auth_method).set_copy_action(false);
     RGWUserInfo user_info;
@@ -2535,7 +2535,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
 {
   // Get request header related DSS info and clear flags
   bool isTokenBasedAuth = (store->auth_method).get_token_validation();
-  (store->auth_method).set_token_validation(false);
+  //(store->auth_method).set_token_validation(false);
   bool isCopyAction = (store->auth_method).get_copy_action();
   (store->auth_method).set_copy_action(false);
   //string copyStr = (store->auth_method).get_copy_source();

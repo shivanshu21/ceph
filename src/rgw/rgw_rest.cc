@@ -537,6 +537,7 @@ void end_header(struct req_state *s, RGWOp *op, const char *content_type, const 
   bool is_send_cors_headers =  s->cct->_conf->rgw_enable_cors_response_headers;
   bool is_token_based_request = obj_ctx->store->auth_method.get_token_validation();
   bool is_request_successful = !(s->err.is_err());
+
   if(is_request_successful && is_token_based_request && is_send_cors_headers) {
     string allowed_origins = s->cct->_conf->rgw_cors_allowed_origin;
     string allowed_methods = s->cct->_conf->rgw_cors_allowed_methods; 
