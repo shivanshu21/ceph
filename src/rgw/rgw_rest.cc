@@ -488,10 +488,10 @@ void dump_access_control(req_state *s, RGWOp *op)
 
 
 /* This method dumps the CORS headers for web console */
-void dump_access_control_for_console(req_state *s)
+void dump_access_control_for_console(req_state *s, const char* origin, const char* method)
 {
   unsigned max_age = CORS_MAX_AGE_INVALID;
-  dump_access_control(s, JCS_CORS_CONSOLE_DOMAIN, JCS_CORS_CONSOLE_METHODS, NULL, NULL, max_age);
+  dump_access_control(s, origin, method, NULL, NULL, max_age);
 }
 
 void dump_start(struct req_state *s)
@@ -534,8 +534,13 @@ void end_header(struct req_state *s, RGWOp *op, const char *content_type, const 
    */
 
   RGWObjectCtx* obj_ctx = (RGWObjectCtx*) s->obj_ctx;
-  if(!(s->err.is_err()) && obj_ctx->store->auth_method.get_token_validation()) {
-    dump_access_control_for_console(s);
+  bool is_send_cors_headers =  s->cct->_conf->rgw_enable_cors_response_headers;
+  bool is_token_based_request = obj_ctx->store->auth_method.get_token_validation();
+  bool is_request_successful = !(s->err.is_err());
+  if(is_request_successful && is_token_based_request && is_send_cors_headers) {
+    string allowed_origins = s->cct->_conf->rgw_cors_allowed_origin;
+    string allowed_methods = s->cct->_conf->rgw_cors_allowed_methods; 
+    dump_access_control_for_console(s, allowed_origins.c_str(), allowed_methods.c_str());
   }
 
 
