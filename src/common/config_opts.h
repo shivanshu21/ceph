@@ -1052,6 +1052,11 @@ OPTION(rgw_multipart_part_upload_limit, OPT_INT, 1024) // parts limit in multipa
 OPTION(rgw_olh_pending_timeout_sec, OPT_INT, 3600) // time until we retire a pending olh change
 OPTION(rgw_user_max_buckets, OPT_U32, 1000) // global option to set max buckets count for all user
 
+OPTION(rgw_enable_cors_response_headers, OPT_BOOL, true) // send cors response headers in case of a token based request
+OPTION(rgw_cors_allowed_origin, OPT_STR, "http://console.staging.jiocloudservices.com, http://console.jiocloudservices.com") // cors allowed domains
+OPTION(rgw_cors_allowed_methods, OPT_STR, "GET, PUT, HEAD, POST, DELETE, COPY") // cors allowed methods
+
+
 OPTION(mutex_perf_counter, OPT_BOOL, false) // enable/disable mutex perf counter
 OPTION(throttler_perf_counter, OPT_BOOL, true) // enable/disable throttler perf counter
 
