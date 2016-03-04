@@ -486,6 +486,14 @@ void dump_access_control(req_state *s, RGWOp *op)
   dump_access_control(s, origin.c_str(), method.c_str(), header.c_str(), exp_header.c_str(), max_age);
 }
 
+
+/* This method dumps the CORS headers for web console */
+void dump_access_control_for_console(req_state *s, const char* origin, const char* method, const char* headers)
+{
+  unsigned max_age = CORS_MAX_AGE_INVALID;
+  dump_access_control(s, origin, method, headers, NULL, max_age);
+}
+
 void dump_start(struct req_state *s)
 {
   if (!s->content_started) {
@@ -512,9 +520,39 @@ void end_header(struct req_state *s, RGWOp *op, const char *content_type, const 
 
   dump_trans_id(s);
 
+  /*
   if (op) {
     dump_access_control(s, op);
   }
+  */
+
+  /* Send CORS headers for console
+   * This is a dirty hack to make object download work from console for the time
+   * being. This will be deprecated when presigned URLs using token or CORS support
+   * is implemented.
+   * 
+   * if there is no error in request and the request has token authentication, send 
+   * hardcoded CORS response headers
+   */
+
+  RGWObjectCtx* obj_ctx = (RGWObjectCtx*) s->obj_ctx;
+  bool is_send_cors_headers =  s->cct->_conf->rgw_enable_cors_response_headers;
+  bool is_token_based_request = obj_ctx->store->auth_method.get_token_validation();
+  bool is_request_successful = !(s->err.is_err());
+  bool is_options_request = (s->op == OP_OPTIONS);
+  bool is_get_request = (s->op == OP_GET);
+  if((is_send_cors_headers && is_request_successful) &&  (is_token_based_request || is_options_request)) {
+    string allowed_origins = s->cct->_conf->rgw_cors_allowed_origin;
+    string allowed_methods = s->cct->_conf->rgw_cors_allowed_methods; 
+    string allowed_headers = s->cct->_conf->rgw_cors_allowed_headers; 
+    dump_access_control_for_console(s, allowed_origins.c_str(), allowed_methods.c_str(), allowed_headers.c_str());
+    if(is_get_request) {
+        string content_disposition_header = s->cct->_conf->rgw_cors_content_disposition_header;
+        string content_disposition_header_value = s->cct->_conf->rgw_cors_content_disposition_header_value;
+        s->cio->print("%s: %s\r\n", content_disposition_header.c_str(), content_disposition_header_value.c_str());
+    }
+  }
+
 
   if (s->prot_flags & RGW_REST_SWIFT && !content_type) {
     force_content_type = true;

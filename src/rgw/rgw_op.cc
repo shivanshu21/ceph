@@ -2700,9 +2700,11 @@ int RGWOptionsCORS::validate_cors_request(RGWCORSConfiguration *cc) {
 
 void RGWOptionsCORS::execute()
 {
+
   ret = read_bucket_cors();
   if (ret < 0)
     return;
+  
 
   origin = s->info.env->get("HTTP_ORIGIN");
   if (!origin) {
@@ -2720,11 +2722,13 @@ void RGWOptionsCORS::execute()
     ret = -EINVAL;
     return;
   }
+  
   if (!cors_exist) {
     dout(2) << "No CORS configuration set yet for this bucket" << dendl;
     ret = -ENOENT;
     return;
   }
+   
   req_hdrs = s->info.env->get("HTTP_ACCESS_CONTROL_REQUEST_HEADERS");
   ret = validate_cors_request(&bucket_cors);
   if (!rule) {
@@ -2991,6 +2995,11 @@ void RGWCompleteMultipart::execute()
   parts = static_cast<RGWMultiCompleteUpload *>(parser.find_first("CompleteMultipartUpload"));
   if (!parts) {
     ret = -EINVAL;
+    return;
+  }
+
+  if (parts->parts.size() > s->cct->_conf->rgw_multipart_part_upload_limit) {
+    ret = -ERANGE;
     return;
   }
 
