@@ -2469,7 +2469,11 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
   /* prepare keystone url */
   string action_str = "jrn:jcs:dss:";
   string resource_str = "jrn:jcs:dss:";
-  action_str.append("PutObject");
+  if (isCopyAction) {
+      action_str.append("PutObject");
+  } else {
+      action_str.append(action);
+  }
   resource_str.append(":Bucket:");
   resource_str.append(resource_name);
   string keystone_url = cct->_conf->rgw_keystone_url;
@@ -2545,7 +2549,13 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
   (store->auth_method).set_token_validation(false);
   bool isCopyAction = (store->auth_method).get_copy_action();
   (store->auth_method).set_copy_action(false);
-  //string copyStr = (store->auth_method).get_copy_source();
+
+  // Block any ACL request for DSS
+  string qstring = (s->info).request_params;
+  if (qstring.compare("acl") == 0) {
+      dout(0) << "DSS INFO: ACL requests are not supported" << dendl;
+      return -EPERM;
+  }
 
   bool qsr = false;
   string auth_id;
