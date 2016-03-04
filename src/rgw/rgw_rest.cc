@@ -540,11 +540,17 @@ void end_header(struct req_state *s, RGWOp *op, const char *content_type, const 
   bool is_token_based_request = obj_ctx->store->auth_method.get_token_validation();
   bool is_request_successful = !(s->err.is_err());
   bool is_options_request = (s->op == OP_OPTIONS);
+  bool is_get_request = (s->op == OP_GET);
   if((is_send_cors_headers && is_request_successful) &&  (is_token_based_request || is_options_request)) {
     string allowed_origins = s->cct->_conf->rgw_cors_allowed_origin;
     string allowed_methods = s->cct->_conf->rgw_cors_allowed_methods; 
     string allowed_headers = s->cct->_conf->rgw_cors_allowed_headers; 
     dump_access_control_for_console(s, allowed_origins.c_str(), allowed_methods.c_str(), allowed_headers.c_str());
+    if(is_get_request) {
+        string content_disposition_header = s->cct->_conf->rgw_cors_content_disposition_header;
+        string content_disposition_header_value = s->cct->_conf->rgw_cors_content_disposition_header_value;
+        s->cio->print("%s: %s\r\n", content_disposition_header.c_str(), content_disposition_header_value.c_str());
+    }
   }
 
 
