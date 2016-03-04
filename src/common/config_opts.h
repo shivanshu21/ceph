@@ -1054,7 +1054,8 @@ OPTION(rgw_user_max_buckets, OPT_U32, 1000) // global option to set max buckets 
 
 OPTION(rgw_enable_cors_response_headers, OPT_BOOL, true) // send cors response headers in case of a token based request
 OPTION(rgw_cors_allowed_origin, OPT_STR, "http://console.staging.jiocloudservices.com, http://console.jiocloudservices.com") // cors allowed domains
-OPTION(rgw_cors_allowed_methods, OPT_STR, "GET, PUT, HEAD, POST, DELETE, COPY") // cors allowed methods
+OPTION(rgw_cors_allowed_methods, OPT_STR, "GET, PUT, HEAD, POST, DELETE, COPY, OPTIONS") // cors allowed methods
+OPTION(rgw_cors_allowed_headers, OPT_STR, "X-Auth-Token, Content-Disposition") // cors allowed headers
 
 
 OPTION(mutex_perf_counter, OPT_BOOL, false) // enable/disable mutex perf counter

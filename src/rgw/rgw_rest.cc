@@ -488,10 +488,10 @@ void dump_access_control(req_state *s, RGWOp *op)
 
 
 /* This method dumps the CORS headers for web console */
-void dump_access_control_for_console(req_state *s, const char* origin, const char* method)
+void dump_access_control_for_console(req_state *s, const char* origin, const char* method, const char* headers)
 {
   unsigned max_age = CORS_MAX_AGE_INVALID;
-  dump_access_control(s, origin, method, NULL, NULL, max_age);
+  dump_access_control(s, origin, method, headers, NULL, max_age);
 }
 
 void dump_start(struct req_state *s)
@@ -520,9 +520,11 @@ void end_header(struct req_state *s, RGWOp *op, const char *content_type, const 
 
   dump_trans_id(s);
 
+  /*
   if (op) {
     dump_access_control(s, op);
   }
+  */
 
   /* Send CORS headers for console
    * This is a dirty hack to make object download work from console for the time
@@ -537,11 +539,12 @@ void end_header(struct req_state *s, RGWOp *op, const char *content_type, const 
   bool is_send_cors_headers =  s->cct->_conf->rgw_enable_cors_response_headers;
   bool is_token_based_request = obj_ctx->store->auth_method.get_token_validation();
   bool is_request_successful = !(s->err.is_err());
-
-  if(is_request_successful && is_token_based_request && is_send_cors_headers) {
+  bool is_options_request = (s->op == OP_OPTIONS);
+  if((is_send_cors_headers && is_request_successful) &&  (is_token_based_request || is_options_request)) {
     string allowed_origins = s->cct->_conf->rgw_cors_allowed_origin;
     string allowed_methods = s->cct->_conf->rgw_cors_allowed_methods; 
-    dump_access_control_for_console(s, allowed_origins.c_str(), allowed_methods.c_str());
+    string allowed_headers = s->cct->_conf->rgw_cors_allowed_headers; 
+    dump_access_control_for_console(s, allowed_origins.c_str(), allowed_methods.c_str(), allowed_headers.c_str());
   }
 
 
