@@ -1188,9 +1188,9 @@ int RGWPostObj_ObjStore_S3::get_policy()
                 dout(1) << "DSS Error: " << errmsg << dendl;
                 return -EACCES;
             }
-            dout(0) << "DSS INFO: Sending Action to keystone: " << resource_info.getAction() << dendl;
-            dout(0) << "DSS INFO: Sending Resource to keystone: " << resource_info.getResourceName() << dendl;
-            dout(0) << "DSS INFO: Sending Tenant to keystone: " << resource_info.getTenantName() << dendl;
+            dout(0) << "DSS INFO: Sending Action to validate: " << resource_info.getAction() << dendl;
+            dout(0) << "DSS INFO: Sending Resource to validate: " << resource_info.getResourceName() << dendl;
+            dout(0) << "DSS INFO: Sending Tenant to validate: " << resource_info.getTenantName() << dendl;
 
             if (isTokenBasedAuth) {
                 keystone_result = keystone_validator.validate_consoleToken(resource_info.getAction(),
@@ -2251,7 +2251,12 @@ int RGWHandler_ObjStore_S3::init(RGWRados *store, struct req_state *s, RGWClient
 
   s->has_acl_header = s->info.env->exists_prefix("HTTP_X_AMZ_GRANT");
 
-  s->copy_source = s->info.env->get("HTTP_X_AMZ_COPY_SOURCE");
+  s->copy_source = s->info.env->get("HTTP_X_JCS_COPY_SOURCE");
+  if (!(s->copy_source)) {
+    // Try for AMZ header too once
+    s->copy_source = s->info.env->get("HTTP_X_AMZ_COPY_SOURCE");
+  }
+
   if (s->copy_source) {
     ret = RGWCopyObj::parse_copy_location(s->copy_source, s->src_bucket_name, s->src_object);
     if (!ret) {
@@ -2464,7 +2469,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
   /* prepare keystone url */
   string action_str = "jrn:jcs:dss:";
   string resource_str = "jrn:jcs:dss:";
-  action_str.append(action);
+  action_str.append("PutObject");
   resource_str.append(":Bucket:");
   resource_str.append(resource_name);
   string keystone_url = cct->_conf->rgw_keystone_url;
@@ -2477,6 +2482,8 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
   keystone_url.append(action_str);
   keystone_url.append("&resource=");
   keystone_url.append(resource_str);
+  tx_buffer.clear();
+  set_tx_buffer("{ }"); // DSS: Need a blank json else IAM will reject
 
   dout(0) << "DSS INFO: Validating token" << dendl;
   dout(0) << "DSS INFO: Action string: " << action_str << dendl;
@@ -2484,6 +2491,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
   dout(0) << "DSS INFO: Final URL: " << keystone_url << dendl;
 
   /* send request */
+  rx_buffer.clear();
   const clock_t begin_time = clock();
   int ret = process("POST", keystone_url.c_str());
   float ticks = ((clock () - begin_time) * 1000) /  CLOCKS_PER_SEC;
@@ -2492,7 +2500,6 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
     dout(0) << "DSS ERROR: Token keystone: token validation ERROR: " << rx_buffer.c_str() << dendl;
     return -EPERM;
   }
-  dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
 
   /* now parse response */
   if (response.parse(cct, rx_buffer) < 0) {
@@ -2615,9 +2622,9 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
           return -EACCES;
       }
 
-      dout(0) << "DSS INFO: Sending Action to keystone: " << resource_info.getAction() << dendl;
-      dout(0) << "DSS INFO: Sending Resource to keystone: " << resource_info.getResourceName() << dendl;
-      dout(0) << "DSS INFO: Sending Tenant to keystone: " << resource_info.getTenantName() << dendl;
+      dout(0) << "DSS INFO: Sending Action to validate: " << resource_info.getAction() << dendl;
+      dout(0) << "DSS INFO: Sending Resource to validate: " << resource_info.getResourceName() << dendl;
+      dout(0) << "DSS INFO: Sending Tenant to validate: " << resource_info.getTenantName() << dendl;
 
       if (isTokenBasedAuth) {
           keystone_result = keystone_validator.validate_consoleToken(resource_info.getAction(),
@@ -2827,7 +2834,7 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
 
         setResourceName(bucket_str);
         RGWBucketInfo source_info;
-        ret = _store->get_bucket_info(obj_ctx, bucket_str, source_info, NULL);
+        /*ret = _store->get_bucket_info(obj_ctx, bucket_str, source_info, NULL);
         if (ret == 0) {
             setTenantName(source_info.owner);
         } else if (obj_action || (_s->op != OP_PUT)) { // Avoid bucket create case
@@ -2836,7 +2843,10 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
             dout(0) << "DSS ERROR: obj action is  " << obj_action << dendl;
             fail_reason = "Failed to fetch tenant name for bucket " + bucket_str;
             return -1;
-        }
+        }*/
+        string dummy_str("NULL");
+        setTenantName(dummy_str); //<<<<<< Not supporting cross account access for now
+
     } else {
         dout(0) << "DSS ERROR: Failed to fetch resource name" << dendl;
         fail_reason = "Failed to fetch resource name";
