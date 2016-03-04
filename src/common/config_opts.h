@@ -948,7 +948,7 @@ OPTION(rgw_enable_quota_threads, OPT_BOOL, true)
 OPTION(rgw_enable_gc_threads, OPT_BOOL, true)
 
 OPTION(rgw_data, OPT_STR, "/var/lib/ceph/radosgw/$cluster-$id")
-OPTION(rgw_enable_apis, OPT_STR, "s3, swift, swift_auth, admin")
+OPTION(rgw_enable_apis, OPT_STR, "s3, admin") //<<<<<< DSS stopped swift
 OPTION(rgw_cache_enabled, OPT_BOOL, true)   // rgw cache enabled
 OPTION(rgw_cache_lru_size, OPT_INT, 10000)   // num of entries in rgw cache
 OPTION(rgw_socket_path, OPT_STR, "")   // path to unix domain socket, if not specified, rgw will not run as external fcgi
