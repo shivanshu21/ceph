@@ -295,6 +295,7 @@ public:
 class RGW_Auth_S3_Keystone_ValidateToken : public RGWHTTPClient {
 private:
   bufferlist rx_buffer;
+  bufferlist rx_headers_buffer;
   bufferlist tx_buffer;
   bufferlist::iterator tx_buffer_it;
   list<string> roles_list;
@@ -317,6 +318,7 @@ public:
   }
 
   int receive_header(void *ptr, size_t len) {
+    rx_headers_buffer.append((char *)ptr, len);
     return 0;
   }
   int receive_data(void *ptr, size_t len) {
