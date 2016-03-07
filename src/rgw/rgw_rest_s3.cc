@@ -2454,15 +2454,15 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
           dout(0) << "DSS ERROR COPY SRC: Token keystone: token validation ERROR: " << rx_buffer.c_str() << dendl;
           return -EPERM;
       }
+
       dout(0) << "DSS INFO COPY SRC: Printing RX buffer: " << rx_buffer.c_str() << dendl;
+      dout(0) << "DSS INFO: Printing RX headers: " << rx_headers_buffer.c_str() << dendl;
 
       /* now parse response */
       if (response.parse(cct, rx_buffer) < 0) {
           dout(0) << "DSS ERROR COPY SRC: Token keystone: token parsing failed" << dendl;
-          dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
           return -EPERM;
       }
-      dout(0) << "DSS INFO COPY SRC: Printing RX buffer: " << rx_buffer.c_str() << dendl;
 
       /* Check if the response is okay */
       if ((response.user.id).empty()   ||
@@ -2517,13 +2517,14 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
     return -EPERM;
   }
 
+  dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
+  dout(0) << "DSS INFO: Printing RX headers: " << rx_headers_buffer.c_str() << dendl;
+
   /* now parse response */
   if (response.parse(cct, rx_buffer) < 0) {
     dout(0) << "DSS ERROR: Token keystone: token parsing failed" << dendl;
-    dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
     return -EPERM;
   }
-  dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
 
   /* Check if the response is okay */
   if ((response.user.id).empty()   ||
