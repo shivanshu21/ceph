@@ -2587,7 +2587,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
 
   if (!isTokenBasedAuth) {
       if (!s->http_auth || !(*s->http_auth)) {
-          auth_id = s->info.args.get("AWSAccessKeyId");
+          auth_id = s->info.args.get("JCSAccessKeyId");
           if (auth_id.size()) {
               auth_sign = s->info.args.get("Signature");
 
