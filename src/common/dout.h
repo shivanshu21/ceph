@@ -50,6 +50,7 @@ inline std::ostream& operator<<(std::ostream& out, _bad_endl_use_dendl_t) {
     }									\
     ceph::log::Entry *_dout_e = cct->_log->create_entry(v, sub);	\
     ostream _dout_os(&_dout_e->m_streambuf);				\
+    _dout_os << __FUNCTION__;                                           \
     CephContext *_dout_cct = cct;					\
     std::ostream* _dout = &_dout_os;
 

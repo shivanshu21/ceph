@@ -2359,8 +2359,10 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
   credentials.close_section();
   std::stringstream os;
   credentials.flush(os);
+  tx_buffer.clear();
   set_tx_buffer(os.str());
   dout(0) << "DSS INFO: Outbound json: " << os.str() << dendl;
+  dout(0) << "DSS INFO: Actual TX buffer: " << tx_buffer.c_str() << dendl;
 
   /* send request */
   const clock_t begin_time = clock();
@@ -2372,13 +2374,13 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
     return -EPERM;
   }
   dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
+  dout(0) << "DSS INFO: Printing RX headers: " << rx_headers_buffer.c_str() << dendl;
 
   /* now parse response */
   if (response.parse(cct, rx_buffer) < 0) {
     dout(2) << "DSS ERROR: keystone:  signature response parsing failed" << dendl;
     return -EPERM;
   }
-  dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
 
   /* Check if the response is okay */
   if ((response.user.id).empty()   ||
@@ -2416,6 +2418,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
   /* set required headers for keystone request */
   append_header("X-Auth-Token", token);
   append_header("Content-Type", "application/json");
+  dout(0) << "DSS INFO: Token flow setting tx buffer" << dendl;
   set_tx_buffer("{ }"); // DSS: Need a blank json else IAM will reject
 
 
@@ -2495,6 +2498,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
   keystone_url.append("&resource=");
   keystone_url.append(resource_str);
   tx_buffer.clear();
+  dout(0) << "DSS INFO: Token flow setting tx buffer in second call" << dendl;
   set_tx_buffer("{ }"); // DSS: Need a blank json else IAM will reject
 
   dout(0) << "DSS INFO: Validating token" << dendl;
