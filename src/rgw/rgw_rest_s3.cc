@@ -2587,7 +2587,12 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
 
   if (!isTokenBasedAuth) {
       if (!s->http_auth || !(*s->http_auth)) {
+          /* try both JCSAccessKeyId and AWSAccessKeyId for the time being otherwise boto apis will fail */
           auth_id = s->info.args.get("JCSAccessKeyId");
+          /* if JCSAccessKeyId is not present, try AWSAccessKeyId */
+          if(!auth_id.size()) {
+            auth_id = s->info.args.get("AWSAccessKeyId");
+          }
           if (auth_id.size()) {
               auth_sign = s->info.args.get("Signature");
 
