@@ -1066,6 +1066,7 @@ OPTION(rgw_cors_allowed_methods, OPT_STR, "GET, PUT, HEAD, POST, DELETE, COPY, O
 OPTION(rgw_cors_allowed_headers, OPT_STR, "X-Auth-Token, Content-Disposition, Content-Type") // cors allowed headers
 OPTION(rgw_cors_content_disposition_header, OPT_STR, "Content-Disposition") // cors content disposition HEADER
 OPTION(rgw_cors_content_disposition_header_value, OPT_STR, "attachment") // cors content disposition HEADER value
+OPTION(rgw_enable_token_based_presigned_url, OPT_BOOL, true) // enable token based presigned url
 
 OPTION(rgw_disable_acl_api, OPT_BOOL, "true")             // disable all acl getters and setters
 OPTION(rgw_keystone_sign_api, OPT_STR, "v3/sign-auth")    // api to validate signature based authentication requests

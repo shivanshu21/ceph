@@ -2629,6 +2629,15 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
 {
   // Get request header related DSS info and clear flags
   bool isTokenBasedAuth = (store->auth_method).get_token_validation();
+  /* check for token in presigned URL requests */
+  if(!isTokenBasedAuth && store->ctx()->_conf->rgw_enable_token_based_presigned_url) {
+      string auth_token = s->info.args.get("X-Auth-Token");
+      if(auth_token.size() > 0) {
+          isTokenBasedAuth = true;
+          store->auth_method.set_token(auth_token);
+      }
+  }
+
   //(store->auth_method).set_token_validation(false);
   bool isCopyAction = (store->auth_method).get_copy_action();
   (store->auth_method).set_copy_action(false);
