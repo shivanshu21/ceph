@@ -2613,7 +2613,8 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
               return 0;
           }
       } else {
-          if ((strncmp(s->http_auth, "AWS ", 4) || (strncmp(s->http_auth, "JCS ", 4)))
+          // strncmp returns 0 on match. If even one of AWS or JCS match, dont return -EINVAL.
+          if ((strncmp(s->http_auth, "AWS ", 4)) && (strncmp(s->http_auth, "JCS ", 4)))
               return -EINVAL;
           string auth_str(s->http_auth + 4);
           int pos = auth_str.rfind(':');
