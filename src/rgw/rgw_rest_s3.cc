@@ -2314,7 +2314,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
   if (keystone_url[keystone_url.size() - 1] != '/') {
     keystone_url.append("/");
   }
-  keystone_url.append("v3/sign-auth");
+  keystone_url.append(cct->_conf->rgw_keystone_sign_api);
 
   dout(0) << "DSS INFO: Action string: " << action_str << dendl;
   dout(0) << "DSS INFO: Resource string: " << resource_str << dendl;
@@ -2434,7 +2434,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
           keystone_url.append("/");
       }
 
-      keystone_url.append("v3/token-auth");
+      keystone_url.append(cct->_conf->rgw_keystone_token_api);
       keystone_url.append("?action=");
       keystone_url.append(action_str);
       keystone_url.append("&resource=");
@@ -2492,7 +2492,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
     keystone_url.append("/");
   }
 
-  keystone_url.append("v3/token-auth");
+  keystone_url.append(cct->_conf->rgw_keystone_token_api);
   keystone_url.append("?action=");
   keystone_url.append(action_str);
   keystone_url.append("&resource=");
@@ -2565,7 +2565,8 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
 
   // Block any ACL request for DSS
   string qstring = (s->info).request_params;
-  if (qstring.compare("acl") == 0) {
+  //cct->_conf->rgw_disable_acl_api;
+  if (store->ctx()->_conf->rgw_disable_acl_api && (qstring.compare("acl") == 0)) {
       dout(0) << "DSS INFO: ACL requests are not supported" << dendl;
       return -EPERM;
   }
@@ -2612,7 +2613,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
               return 0;
           }
       } else {
-          if (strncmp(s->http_auth, "AWS ", 4))
+          if ((strncmp(s->http_auth, "AWS ", 4) || (strncmp(s->http_auth, "JCS ", 4)))
               return -EINVAL;
           string auth_str(s->http_auth + 4);
           int pos = auth_str.rfind(':');
