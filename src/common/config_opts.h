@@ -1017,7 +1017,15 @@ OPTION(rgw_extended_http_attrs, OPT_STR, "") // list of extended attrs that can 
 OPTION(rgw_exit_timeout_secs, OPT_INT, 120) // how many seconds to wait for process to go down before exiting unconditionally
 OPTION(rgw_get_obj_window_size, OPT_INT, 16 << 20) // window size in bytes for single get obj request
 OPTION(rgw_get_obj_max_req_size, OPT_INT, 4 << 20) // max length of a single get obj rados op
-OPTION(rgw_relaxed_s3_bucket_names, OPT_BOOL, false) // enable relaxed bucket name rules for US region buckets
+/*
+* RGW Bucket name restriction option. values can be {0,1,2). Default value is 1.
+* Setting value as 0 : enable relaxed bucket name rules for US region buckets.
+* Setting as 1 : name can't start with a non-alphanumeric. rest same as value =1.
+*
+* Setting as 2 : further restricts name so as to follow AWS S3 bucket naming conventions for non-standard regions.
+*/
+OPTION(rgw_s3_bucket_name_create_strictness, OPT_INT, 2)
+OPTION(rgw_s3_bucket_name_access_strictness, OPT_INT, 1) // option for bucket access. Values similar to above option for creation
 OPTION(rgw_defer_to_bucket_acls, OPT_STR, "") // if the user has bucket perms, use those before key perms (recurse and full_control)
 OPTION(rgw_list_buckets_max_chunk, OPT_INT, 1000) // max buckets to retrieve in a single op when listing user buckets
 OPTION(rgw_md_log_max_shards, OPT_INT, 64) // max shards for metadata log
@@ -1055,7 +1063,7 @@ OPTION(rgw_user_max_buckets, OPT_U32, 1000) // global option to set max buckets 
 OPTION(rgw_enable_cors_response_headers, OPT_BOOL, true) // send cors response headers in case of a token based request
 OPTION(rgw_cors_allowed_origin, OPT_STR, "http://console.staging.jiocloudservices.com") // cors allowed domains
 OPTION(rgw_cors_allowed_methods, OPT_STR, "GET, PUT, HEAD, POST, DELETE, COPY, OPTIONS") // cors allowed methods
-OPTION(rgw_cors_allowed_headers, OPT_STR, "X-Auth-Token, Content-Disposition") // cors allowed headers
+OPTION(rgw_cors_allowed_headers, OPT_STR, "X-Auth-Token, Content-Disposition, Content-Type") // cors allowed headers
 OPTION(rgw_cors_content_disposition_header, OPT_STR, "Content-Disposition") // cors content disposition HEADER
 OPTION(rgw_cors_content_disposition_header_value, OPT_STR, "attachment") // cors content disposition HEADER value
 
