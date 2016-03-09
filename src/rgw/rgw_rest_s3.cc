@@ -2488,93 +2488,65 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& acti
   /* set required headers for keystone request */
   append_header("X-Auth-Token", token);
   append_header("Content-Type", "application/json");
-  dout(0) << "DSS INFO: Token flow setting tx buffer" << dendl;
-  set_tx_buffer("{ }"); // DSS: Need a blank json else IAM will reject
-
-
-  if (isCopyAction) {
-      /* prepare keystone url For copy source action */
-      string action_str = "jrn:jcs:dss:";
-      string resource_str = "jrn:jcs:dss:";
-      action_str.append("ListBucket");
-      resource_str.append(":Bucket:");
-      resource_str.append(copy_src);
-      string keystone_url = cct->_conf->rgw_keystone_url;
-      if (keystone_url[keystone_url.size() - 1] != '/') {
-          keystone_url.append("/");
-      }
-
-      keystone_url.append(cct->_conf->rgw_keystone_token_api);
-      keystone_url.append("?action=");
-      keystone_url.append(action_str);
-      keystone_url.append("&resource=");
-      keystone_url.append(resource_str);
-
-      dout(0) << "DSS INFO COPY SRC: Validating token" << dendl;
-      dout(0) << "DSS INFO COPY SRC: Action string: " << action_str << dendl;
-      dout(0) << "DSS INFO COPY SRC: Resource string: " << resource_str << dendl;
-      dout(0) << "DSS INFO COPY SRC: Final URL: " << keystone_url << dendl;
-
-      /* send request */
-      const clock_t begin_time = clock();
-      int ret = process("POST", keystone_url.c_str());
-      float ticks = ((clock () - begin_time) * 1000) /  CLOCKS_PER_SEC;
-      dout(0) << "DSS INFO COPY SRC: Keystone response time (milliseconds): " << ticks << dendl;
-      if (ret < 0) {
-          dout(0) << "DSS ERROR COPY SRC: Token keystone: token validation ERROR: " << rx_buffer.c_str() << dendl;
-          return -EPERM;
-      }
-
-      dout(0) << "DSS INFO COPY SRC: Printing RX buffer: " << rx_buffer.c_str() << dendl;
-      dout(0) << "DSS INFO: Printing RX headers: " << rx_headers_buffer.c_str() << dendl;
-
-      /* now parse response */
-      if (response.parse(cct, rx_buffer) < 0) {
-          dout(0) << "DSS ERROR COPY SRC: Token keystone: token parsing failed" << dendl;
-          return -EPERM;
-      }
-
-      /* Check if the response is okay */
-      if ((response.user.id).empty()   ||
-              (response.token.tenant.id).empty()) {
-          dout(0) << "DSS ERROR COPY SRC: Response empty. "
-              << " Root account ID: "
-              << response.token.tenant.id.c_str()
-              << " User ID: "
-              << response.user.id.c_str()
-              << dendl;
-          return -EPERM;
-      }
-  }
 
   /* prepare keystone url */
   string action_str = "jrn:jcs:dss:";
-  string resource_str = "jrn:jcs:dss:";
+  string copy_action_str = "jrn:jcs:dss:GetObject";
+  string implicit_allow = "False";
   if (isCopyAction) {
       action_str.append("PutObject");
   } else {
       action_str.append(action);
   }
+
+  string resource_str = "jrn:jcs:dss:";
+  string copy_resource_str = "jrn:jcs:dss:";
   resource_str.append(":Bucket:");
   resource_str.append(resource_name);
+  if (isCopyAction) {
+      copy_resource_str.append(":Bucket:");
+      copy_resource_str.append(copy_src);
+  }
+
   string keystone_url = cct->_conf->rgw_keystone_url;
   if (keystone_url[keystone_url.size() - 1] != '/') {
     keystone_url.append("/");
   }
-
   keystone_url.append(cct->_conf->rgw_keystone_token_api);
-  keystone_url.append("?action=");
-  keystone_url.append(action_str);
-  keystone_url.append("&resource=");
-  keystone_url.append(resource_str);
-  tx_buffer.clear();
-  dout(0) << "DSS INFO: Token flow setting tx buffer in second call" << dendl;
-  set_tx_buffer("{ }"); // DSS: Need a blank json else IAM will reject
 
   dout(0) << "DSS INFO: Validating token" << dendl;
   dout(0) << "DSS INFO: Action string: " << action_str << dendl;
   dout(0) << "DSS INFO: Resource string: " << resource_str << dendl;
+  if (isCopyAction) {
+      dout(0) << "DSS INFO: Copy src Action string: " << copy_action_str << dendl;
+      dout(0) << "DSS INFO: Copy src Resource string: " << copy_resource_str << dendl;
+  }
   dout(0) << "DSS INFO: Final URL: " << keystone_url << dendl;
+
+  /* create json credentials request body */
+  JSONFormatter credentials(false);
+  credentials.open_object_section("");
+  credentials.open_array_section("action_resource_list");
+  credentials.open_object_section("");
+  credentials.dump_string("action", action_str.c_str());
+  credentials.dump_string("resource", resource_str.c_str());
+  credentials.dump_string("implicit_allow", implicit_allow.c_str());
+  credentials.close_section();
+  if (isCopyAction) {
+      credentials.open_object_section("");
+      credentials.dump_string("action", copy_action_str.c_str());
+      credentials.dump_string("resource", copy_resource_str.c_str());
+      credentials.dump_string("implicit_allow", implicit_allow.c_str());
+      credentials.close_section();
+  }
+  credentials.close_section();
+  credentials.close_section();
+  std::stringstream os;
+  credentials.flush(os);
+  tx_buffer.clear();
+  set_tx_buffer(os.str());
+  dout(0) << "DSS INFO: Outbound json: " << os.str() << dendl;
+  dout(0) << "DSS INFO: Actual TX buffer: " << tx_buffer.c_str() << dendl;
 
   /* send request */
   rx_buffer.clear();
