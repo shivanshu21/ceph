@@ -341,19 +341,20 @@ public:
     return l;
   }
 
-  int validate_s3token(const string& auth_id,
-                       const string& auth_token,
-                       const string& auth_sign,
-                       const string& action,
+  int validate_request(const string& action,
                        const string& resource_name,
                        const string& tenant_name,
-                       const string& copy_src);
+                       const bool&   is_sign_auth,
+                       const bool&   is_copy,
+                       const bool&   is_cross_account,
+                       const bool&   is_url_token,
+                       const string& copy_src,
+                       const string& token,
+                       const string& auth_id,
+                       const string& auth_token,
+                       const string& auth_sign);
 
-  int validate_consoleToken(const string& action,
-                            const string& resource_name,
-                            const string& tenant_name,
-                            const string& token,
-                            const string& copy_src);
+  int make_iam_request(const string& keystone_url);
 };
 
 class RGW_Auth_S3 {
@@ -479,7 +480,7 @@ class RGWResourceKeystoneInfo {
             "ListBucket",
             "CreateBucket",
             "DeleteBucket",
-            "HeadBucket",     // Permission same as get
+            "HeadBucket",     // Permission same as Get
             "PostBucket",     // Not supported but needed
             "CopyBucket",     // Not supported but needed
             "OptionsBucket",  // Not supported but needed
@@ -495,6 +496,7 @@ class RGWResourceKeystoneInfo {
     public:
         RGWResourceKeystoneInfo(struct req_state *s, RGWRados *store, bool copyAction) :
             _s(s), _store(store), _copy_req(copyAction) { }
+        RGWResourceKeystoneInfo() : _s(NULL), _store(NULL), _copy_req(false) { }
         ~RGWResourceKeystoneInfo() { }
 
         inline string getTenantName()
@@ -551,6 +553,17 @@ class RGWResourceKeystoneInfo {
                                    bool object_action,
                                    int special_action,
                                    string& fail_reason);
+
+        bool get_bucket_public_perm(const string& action,
+                                    const string& resource,
+                                    bool& is_public_bucket,
+                                    string& reason);
 };
 
+class dss_endpoint {
+    public:
+        static string endpoint;
+        dss_endpoint() { }
+        ~dss_endpoint() { }
+};
 #endif
