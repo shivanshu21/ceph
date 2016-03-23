@@ -714,6 +714,8 @@ static int civetweb_callback(struct mg_connection *conn) {
   RGWRados *store = pe->store;
   RGWREST *rest = pe->rest;
   OpsLogSocket *olog = pe->olog;
+              
+  (store->auth_method).set_token_validation(false);
 
   /* Go through all the headers to find out if the authentication
    * method required is EC2 signature or tokens.

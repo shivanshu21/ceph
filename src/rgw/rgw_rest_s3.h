@@ -295,6 +295,7 @@ public:
 class RGW_Auth_S3_Keystone_ValidateToken : public RGWHTTPClient {
 private:
   bufferlist rx_buffer;
+  bufferlist rx_headers_buffer;
   bufferlist tx_buffer;
   bufferlist::iterator tx_buffer_it;
   list<string> roles_list;
@@ -317,6 +318,7 @@ public:
   }
 
   int receive_header(void *ptr, size_t len) {
+    rx_headers_buffer.append((char *)ptr, len);
     return 0;
   }
   int receive_data(void *ptr, size_t len) {
@@ -365,7 +367,7 @@ public:
   RGWHandler_Auth_S3() : RGWHandler_ObjStore() {}
   virtual ~RGWHandler_Auth_S3() {}
 
-  virtual int validate_bucket_name(const string& bucket) {
+  virtual int validate_bucket_name(const string& bucket, int name_strictness) {
     return 0;
   }
 
@@ -385,7 +387,7 @@ public:
   RGWHandler_ObjStore_S3() : RGWHandler_ObjStore() {}
   virtual ~RGWHandler_ObjStore_S3() {}
 
-  int validate_bucket_name(const string& bucket, bool relaxed_names);
+  int validate_bucket_name(const string& bucket, int name_strictness);
 
   virtual int init(RGWRados *store, struct req_state *state, RGWClientIO *cio);
   virtual int authorize() {
