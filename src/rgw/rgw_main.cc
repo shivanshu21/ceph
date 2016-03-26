@@ -710,15 +710,54 @@ void RGWLoadGenProcess::handle_request(RGWRequest *r)
 static int civetweb_callback(struct mg_connection *conn) {
   struct mg_request_info *req_info = mg_get_request_info(conn);
   RGWProcessEnv *pe = static_cast<RGWProcessEnv *>(req_info->user_data);
+
   RGWRados *store = pe->store;
   RGWREST *rest = pe->rest;
   OpsLogSocket *olog = pe->olog;
+              
+  (store->auth_method).set_token_validation(false);
+
+  /* Go through all the headers to find out if the authentication
+   * method required is EC2 signature or tokens.
+   * While there can be at most 100 header fields in a HTTP request,
+   * http_headers is an array of size 64 elements inside civetweb */
+  for (int i = 0; i < 64; i++) {
+      if ((req_info->http_headers[i]).name != NULL) {
+          string name_str((req_info->http_headers[i]).name);
+          string value_str((req_info->http_headers[i]).value);
+          dout(1) << "DSS INFO: CIVETWEB HEADER NAME: " << name_str << dendl;
+          dout(1) << "DSS INFO: CIVETWEB HEADER VALUE: " << value_str << dendl;
+
+          if (name_str.compare("X-Auth-Token") == 0) {
+              // This request has a token not EC2 credentials
+              (store->auth_method).set_token_validation(true);
+              // Fill the token string even if it is blank
+              // Keystone will handle the rest
+              (store->auth_method).set_token(value_str);
+          }
+          if (
+             (((name_str.compare("x-amz-metadata-directive") == 0)
+             || (name_str.compare("x-jcs-metadata-directive")))
+             && (value_str.compare("COPY") == 0)) ||
+             ((name_str.compare("x-amz-copy-source") == 0)
+             || (name_str.compare("x-jcs-copy-source") == 0) )) {
+
+              // Mark the bool value if this request if for COPY.
+              // If the copy source is provided, store that. Else, down the line throw an error.
+              (store->auth_method).set_copy_action(true);
+              if ((name_str.compare("x-amz-copy-source") == 0)
+               || (name_str.compare("x-jcs-copy-source") == 0)) {
+                  (store->auth_method).set_copy_source(value_str);
+              }
+          }
+      }
+  }
+  dout(1) << "DSS INFO: token validation set to: " << (store->auth_method).get_token_validation() << dendl;
 
   RGWRequest *req = new RGWRequest(store->get_new_req_id());
   RGWMongoose client_io(conn, pe->port);
 
   client_io.init(g_ceph_context);
-
 
   int ret = process_request(store, rest, req, &client_io, olog);
   if (ret < 0) {

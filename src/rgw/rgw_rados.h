@@ -1276,7 +1276,9 @@ public:
                quota_handler(NULL),
                finisher(NULL),
                rest_master_conn(NULL),
-               meta_mgr(NULL), data_log(NULL) {}
+               meta_mgr(NULL),
+               data_log(NULL),
+               auth_method(false, false) {}
 
   uint64_t get_new_req_id() {
     return max_req_id.inc();
@@ -1293,6 +1295,56 @@ public:
   void set_zone(const string& name) {
     zone_name = name;
   }
+
+  /* Holds info on whether the request should be
+   * validated via EC2 signature or Auth tokens.
+   * Also checks if the action is COPY */
+  class authorization_method {
+      private:
+          bool _token_validation;
+          bool _copy_action;
+          string _token;
+          string _copy_source;
+
+      public:
+          inline bool get_token_validation()
+          {
+              return _token_validation;
+          }
+          inline void set_token_validation(bool method)
+          {
+              _token_validation = method;
+          }
+          inline string get_token()
+          {
+              return _token;
+          }
+          inline void set_token(string tok)
+          {
+              _token = tok;
+          }
+          inline bool get_copy_action()
+          {
+              return _copy_action;
+          }
+          inline void set_copy_action(bool action)
+          {
+              _copy_action = action;
+          }
+          inline string get_copy_source()
+          {
+              return _copy_source;
+          }
+          inline void set_copy_source(string source)
+          {
+              _copy_source = source;
+          }
+
+          authorization_method(bool method, bool action) :
+              _token_validation(method),
+              _copy_action(action) { }
+          ~authorization_method() { }
+  } auth_method;
 
   RGWRegion region;
   RGWZoneParams zone; /* internal zone params, e.g., rados pools */

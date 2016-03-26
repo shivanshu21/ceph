@@ -12,22 +12,21 @@
 #include "rgw_rest.h"
 #include "rgw_rest_s3.h"
 #include "rgw_auth_s3.h"
-#include "rgw_acl.h"
 #include "rgw_policy_s3.h"
 #include "rgw_user.h"
 #include "rgw_cors.h"
 #include "rgw_cors_s3.h"
 
 #include "rgw_client_io.h"
-
 #define dout_subsys ceph_subsys_rgw
 
 using namespace ceph::crypto;
 
 void list_all_buckets_start(struct req_state *s)
 {
+  //s->formatter->open_array_section_in_ns("ListAllMyBucketsResult", "http://s3.amazonaws.com/doc/2006-03-01/");
   s->formatter->open_array_section_in_ns("ListAllMyBucketsResult",
-			      "http://s3.amazonaws.com/doc/2006-03-01/");
+                                         "https://dss.ind-west-1.staging.jiocloudservices.com");
 }
 
 void list_all_buckets_end(struct req_state *s)
@@ -250,7 +249,7 @@ int RGWListBucket_ObjStore_S3::get_params()
 void RGWListBucket_ObjStore_S3::send_versioned_response()
 {
   s->formatter->open_object_section_in_ns("ListVersionsResult",
-					  "http://s3.amazonaws.com/doc/2006-03-01/");
+					  "https://dss.ind-west-1.staging.jiocloudservices.com");
   s->formatter->dump_string("Name", s->bucket_name_str);
   s->formatter->dump_string("Prefix", prefix);
   s->formatter->dump_string("KeyMarker", marker.name);
@@ -327,7 +326,7 @@ void RGWListBucket_ObjStore_S3::send_response()
   }
 
   s->formatter->open_object_section_in_ns("ListBucketResult",
-					  "http://s3.amazonaws.com/doc/2006-03-01/");
+					  "https://dss.ind-west-1.staging.jiocloudservices.com");
   s->formatter->dump_string("Name", s->bucket_name_str);
   s->formatter->dump_string("Prefix", prefix);
   s->formatter->dump_string("Marker", marker.name);
@@ -382,7 +381,7 @@ void RGWGetBucketLogging_ObjStore_S3::send_response()
   dump_start(s);
 
   s->formatter->open_object_section_in_ns("BucketLoggingStatus",
-					  "http://doc.s3.amazonaws.com/doc/2006-03-01/");
+					  "https://dss.ind-west-1.staging.jiocloudservices.com");
   s->formatter->close_section();
   rgw_flush_formatter_and_reset(s, s->formatter);
 }
@@ -406,7 +405,7 @@ void RGWGetBucketLocation_ObjStore_S3::send_response()
   }
 
   s->formatter->dump_format_ns("LocationConstraint",
-			       "http://doc.s3.amazonaws.com/doc/2006-03-01/",
+			       "https://dss.ind-west-1.staging.jiocloudservices.com",
 			       "%s",api_name.c_str());
   rgw_flush_formatter_and_reset(s, s->formatter);
 }
@@ -418,7 +417,7 @@ void RGWGetBucketVersioning_ObjStore_S3::send_response()
   dump_start(s);
 
   s->formatter->open_object_section_in_ns("VersioningConfiguration",
-					  "http://doc.s3.amazonaws.com/doc/2006-03-01/");
+					  "https://dss.ind-west-1.staging.jiocloudservices.com");
   if (versioned) {
     const char *status = (versioning_enabled ? "Enabled" : "Suspended");
     s->formatter->dump_string("Status", status);
@@ -506,9 +505,9 @@ static void dump_bucket_metadata(struct req_state *s, RGWBucketEnt& bucket)
 {
   char buf[32];
   snprintf(buf, sizeof(buf), "%lld", (long long)bucket.count);
-  s->cio->print("X-RGW-Object-Count: %s\r\n", buf);
+  s->cio->print("x-jcs-Object-Count: %s\r\n", buf); //<<<<<< X-RGW-
   snprintf(buf, sizeof(buf), "%lld", (long long)bucket.size);
-  s->cio->print("X-RGW-Bytes-Used: %s\r\n", buf);
+  s->cio->print("x-jcs-Bytes-Used: %s\r\n", buf);
 }
 
 void RGWStatBucket_ObjStore_S3::send_response()
@@ -1147,127 +1146,162 @@ int RGWPostObj_ObjStore_S3::get_params()
 
 int RGWPostObj_ObjStore_S3::get_policy()
 {
-  bufferlist encoded_policy;
-
-  if (part_bl("policy", &encoded_policy)) {
-
-    // check that the signature matches the encoded policy
-    string s3_access_key;
-    if (!part_str("AWSAccessKeyId", &s3_access_key)) {
-      ldout(s->cct, 0) << "No S3 access key found!" << dendl;
-      err_msg = "Missing access key";
-      return -EINVAL;
-    }
-    string received_signature_str;
-    if (!part_str("signature", &received_signature_str)) {
-      ldout(s->cct, 0) << "No signature found!" << dendl;
-      err_msg = "Missing signature";
-      return -EINVAL;
-    }
-
+    bufferlist encoded_policy;
+    bool isTokenBasedAuth = (store->auth_method).get_token_validation();
+    //(store->auth_method).set_token_validation(false);
+    bool isCopyAction = (store->auth_method).get_copy_action();
+    (store->auth_method).set_copy_action(false);
     RGWUserInfo user_info;
+    string received_signature_str;
+    string s3_access_key;
 
-    ret = rgw_get_user_info_by_access_key(store, s3_access_key, user_info);
-    if (ret < 0) {
-      // Try keystone authentication as well
-      int keystone_result = -EINVAL;
-      if (!store->ctx()->_conf->rgw_s3_auth_use_keystone ||
-	  store->ctx()->_conf->rgw_keystone_url.empty()) {
-        return -EACCES;
-      }
-      dout(20) << "s3 keystone: trying keystone auth" << dendl;
-
-      RGW_Auth_S3_Keystone_ValidateToken keystone_validator(store->ctx());
-      keystone_result = keystone_validator.validate_s3token(s3_access_key,string(encoded_policy.c_str(),encoded_policy.length()),received_signature_str);
-
-      if (keystone_result < 0) {
-        ldout(s->cct, 0) << "User lookup failed!" << dendl;
-        err_msg = "Bad access key / signature";
-        return -EACCES;
-      }
-
-      user_info.user_id = keystone_validator.response.token.tenant.id;
-      user_info.display_name = keystone_validator.response.token.tenant.name;
-
-      /* try to store user if it not already exists */
-      if (rgw_get_user_info_by_uid(store, keystone_validator.response.token.tenant.id, user_info) < 0) {
-        int ret = rgw_store_user_info(store, user_info, NULL, NULL, 0, true);
-        if (ret < 0) {
-          dout(10) << "NOTICE: failed to store new user's info: ret=" << ret << dendl;
+    if (part_bl("policy", &encoded_policy)) {
+        if (!isTokenBasedAuth) {
+            // check that the signature matches the encoded policy
+            if (!part_str("AWSAccessKeyId", &s3_access_key)) {
+                ldout(s->cct, 0) << "No DSS access key found!" << dendl;
+                err_msg = "Missing access key";
+                return -EINVAL;
+            }
+            if (!part_str("signature", &received_signature_str)) {
+                ldout(s->cct, 0) << "No signature found!" << dendl;
+                err_msg = "Missing signature";
+                return -EINVAL;
+            }
+            ret = rgw_get_user_info_by_access_key(store, s3_access_key, user_info);
         }
 
-        s->perm_mask = RGW_PERM_FULL_CONTROL;
-      }
-    } else {
-      map<string, RGWAccessKey> access_keys  = user_info.access_keys;
+        if ((ret < 0) || isTokenBasedAuth) {
+            // Try keystone authentication as well
+            int keystone_result = -EINVAL;
+            if (!store->ctx()->_conf->rgw_s3_auth_use_keystone ||
+                    store->ctx()->_conf->rgw_keystone_url.empty()) {
+                return -EACCES;
+            }
+            dout(20) << "DSS keystone: trying keystone auth" << dendl;
+            RGW_Auth_S3_Keystone_ValidateToken keystone_validator(store->ctx());
 
-      map<string, RGWAccessKey>::const_iterator iter = access_keys.find(s3_access_key);
-      // We know the key must exist, since the user was returned by
-      // rgw_get_user_info_by_access_key, but it doesn't hurt to check!
-      if (iter == access_keys.end()) {
-	ldout(s->cct, 0) << "Secret key lookup failed!" << dendl;
-	err_msg = "No secret key for matching access key";
-	return -EACCES;
-      }
-      string s3_secret_key = (iter->second).key;
+            // Get Resource info for keystone
+            string errmsg;
+            RGWResourceKeystoneInfo resource_info(s, store, isCopyAction);
+            if(resource_info.fetchInfo(errmsg)) {
+                dout(1) << "DSS Error: " << errmsg << dendl;
+                return -EACCES;
+            }
+            dout(0) << "DSS INFO: Sending Action to validate: " << resource_info.getAction() << dendl;
+            dout(0) << "DSS INFO: Sending Resource to validate: " << resource_info.getResourceName() << dendl;
+            dout(0) << "DSS INFO: Sending Tenant to validate: " << resource_info.getTenantName() << dendl;
 
-      char expected_signature_char[CEPH_CRYPTO_HMACSHA1_DIGESTSIZE];
+            if (isTokenBasedAuth) {
+                keystone_result = keystone_validator.validate_consoleToken(resource_info.getAction(),
+                        resource_info.getResourceName(),
+                        resource_info.getTenantName(),
+                        (store->auth_method).get_token(),
+                        resource_info.getCopySrc());
+            } else {
+                keystone_result = keystone_validator.validate_s3token(s3_access_key,
+                        string(encoded_policy.c_str(),encoded_policy.length()),
+                        received_signature_str,
+                        resource_info.getAction(),
+                        resource_info.getResourceName(),
+                        resource_info.getTenantName(),
+                        resource_info.getCopySrc());
+            }
 
-      calc_hmac_sha1(s3_secret_key.c_str(), s3_secret_key.size(), encoded_policy.c_str(), encoded_policy.length(), expected_signature_char);
-      bufferlist expected_signature_hmac_raw;
-      bufferlist expected_signature_hmac_encoded;
-      expected_signature_hmac_raw.append(expected_signature_char, CEPH_CRYPTO_HMACSHA1_DIGESTSIZE);
-      expected_signature_hmac_raw.encode_base64(expected_signature_hmac_encoded);
-      expected_signature_hmac_encoded.append((char)0); /* null terminate */
+            if (keystone_result < 0) {
+                ldout(s->cct, 0) << "User lookup failed!" << dendl;
+                if (!isTokenBasedAuth) {
+                    err_msg = "Bad access key / signature";
+                } else {
+                    err_msg = "Bad X-Auth-Token";
+                }
+                return -EACCES;
+            }
+            user_info.user_id = keystone_validator.response.token.tenant.id;
+            user_info.display_name = keystone_validator.response.token.tenant.id; //<<<<<< DSS needs tenant.name
+            /* try to store user if it not already exists */
+            if (rgw_get_user_info_by_uid(store, keystone_validator.response.token.tenant.id, user_info) < 0) {
+                int ret = rgw_store_user_info(store, user_info, NULL, NULL, 0, true);
+                if (ret < 0) {
+                    dout(10) << "NOTICE: failed to store new user's info: ret=" << ret << dendl;
+                }
 
-      if (received_signature_str.compare(expected_signature_hmac_encoded.c_str()) != 0) {
-	ldout(s->cct, 0) << "Signature verification failed!" << dendl;
-	ldout(s->cct, 0) << "received: " << received_signature_str.c_str() << dendl;
-	ldout(s->cct, 0) << "expected: " << expected_signature_hmac_encoded.c_str() << dendl;
-	err_msg = "Bad access key / signature";
-	return -EACCES;
-      }
-    }
+                s->perm_mask = RGW_PERM_FULL_CONTROL;
+            }
+        } else {
+            map<string, RGWAccessKey> access_keys  = user_info.access_keys;
+            map<string, RGWAccessKey>::const_iterator iter = access_keys.find(s3_access_key);
+            // We know the key must exist, since the user was returned by
+            // rgw_get_user_info_by_access_key, but it doesn't hurt to check!
+            if (iter == access_keys.end()) {
+                ldout(s->cct, 0) << "Secret key lookup failed!" << dendl;
+                err_msg = "No secret key for matching access key";
+                return -EACCES;
+            }
+            string s3_secret_key = (iter->second).key;
 
-    ldout(s->cct, 0) << "Successful Signature Verification!" << dendl;
-    bufferlist decoded_policy;
-    try {
-      decoded_policy.decode_base64(encoded_policy);
-    } catch (buffer::error& err) {
-      ldout(s->cct, 0) << "failed to decode_base64 policy" << dendl;
-      err_msg = "Could not decode policy";
-      return -EINVAL;
-    }
+            char expected_signature_char[CEPH_CRYPTO_HMACSHA1_DIGESTSIZE];
 
-    decoded_policy.append('\0'); // NULL terminate
+            calc_hmac_sha1(s3_secret_key.c_str(), s3_secret_key.size(),
+                           encoded_policy.c_str(), encoded_policy.length(),
+                           expected_signature_char);
+            bufferlist expected_signature_hmac_raw;
+            bufferlist expected_signature_hmac_encoded;
+            expected_signature_hmac_raw.append(expected_signature_char, CEPH_CRYPTO_HMACSHA1_DIGESTSIZE);
+            expected_signature_hmac_raw.encode_base64(expected_signature_hmac_encoded);
+            expected_signature_hmac_encoded.append((char)0); /* null terminate */
 
-    ldout(s->cct, 0) << "POST policy: " << decoded_policy.c_str() << dendl;
+            if (received_signature_str.compare(expected_signature_hmac_encoded.c_str()) != 0) {
+                ldout(s->cct, 0) << "Signature verification failed!" << dendl;
+                ldout(s->cct, 0) << "received: " << received_signature_str.c_str() << dendl;
+                ldout(s->cct, 0) << "expected: " << expected_signature_hmac_encoded.c_str() << dendl;
+                err_msg = "Bad access key / signature";
+                return -EACCES;
+            }
+        }
 
-    int r = post_policy.from_json(decoded_policy, err_msg);
-    if (r < 0) {
-      if (err_msg.empty()) {
-	err_msg = "Failed to parse policy";
-      }
-      ldout(s->cct, 0) << "failed to parse policy" << dendl;
-      return -EINVAL;
-    }
+        if (isTokenBasedAuth) {
+            ldout(s->cct, 0) << "Token verification successful!" << dendl;
+        } else {
+            ldout(s->cct, 0) << "Successful Signature Verification!" << dendl;
+        }
+        bufferlist decoded_policy;
+        try {
+            decoded_policy.decode_base64(encoded_policy);
+        } catch (buffer::error& err) {
+            ldout(s->cct, 0) << "failed to decode_base64 policy" << dendl;
+            err_msg = "Could not decode policy";
+            return -EINVAL;
+        }
 
-    post_policy.set_var_checked("AWSAccessKeyId");
-    post_policy.set_var_checked("policy");
-    post_policy.set_var_checked("signature");
+        decoded_policy.append('\0'); // NULL terminate
+        ldout(s->cct, 0) << "POST policy: " << decoded_policy.c_str() << dendl;
+        int r = post_policy.from_json(decoded_policy, err_msg);
+        if (r < 0) {
+            if (err_msg.empty()) {
+                err_msg = "Unknown error occurred in parsing the policy.";
+            }
+            ldout(s->cct, 0) << "Failed to parse policy. Reason: " << err_msg << dendl;
+            return -EINVAL;
+        }
 
-    r = post_policy.check(&env, err_msg);
-    if (r < 0) {
-      if (err_msg.empty()) {
-	err_msg = "Policy check failed";
-      }
-      ldout(s->cct, 0) << "policy check failed" << dendl;
-      return r;
-    }
+        if (!isTokenBasedAuth) {
+            post_policy.set_var_checked("AWSAccessKeyId");
+            post_policy.set_var_checked("policy");
+            post_policy.set_var_checked("signature");
+        }
 
-    s->user = user_info;
-    s->owner.set_id(user_info.user_id);
-    s->owner.set_name(user_info.display_name);
+        r = post_policy.check(&env, err_msg);
+        if (r < 0) {
+            if (err_msg.empty()) {
+                err_msg = "Policy check failed";
+            }
+            ldout(s->cct, 0) << "policy check failed" << dendl;
+            return r;
+        }
+        s->user = user_info;
+        s->owner.set_id(user_info.user_id);
+        s->owner.set_name(user_info.display_name);
   } else {
     ldout(s->cct, 0) << "No attached policy found!" << dendl;
   }
@@ -1283,7 +1317,6 @@ int RGWPostObj_ObjStore_S3::get_policy()
   }
 
   policy = s3policy;
-
   return 0;
 }
 
@@ -1427,10 +1460,10 @@ void RGWDeleteObj_ObjStore_S3::send_response()
   set_req_state_err(s, r);
   dump_errno(s);
   if (!version_id.empty()) {
-    dump_string_header(s, "x-amz-version-id", version_id.c_str());
+    dump_string_header(s, "x-jcs-version-id", version_id.c_str());
   }
   if (delete_marker) {
-    dump_string_header(s, "x-amz-delete-marker", "true");
+    dump_string_header(s, "x-jcs-delete-marker", "true");
   }
   end_header(s, this);
 }
@@ -1676,23 +1709,31 @@ void RGWDeleteCORS_ObjStore_S3::send_response()
 
 void RGWOptionsCORS_ObjStore_S3::send_response()
 {
+  bool is_console_dirty_hack =  s->cct->_conf->rgw_enable_cors_response_headers;
   string hdrs, exp_hdrs;
   uint32_t max_age = CORS_MAX_AGE_INVALID;
   /*EACCES means, there is no CORS registered yet for the bucket
    *ENOENT means, there is no match of the Origin in the list of CORSRule
    */
-  if (ret == -ENOENT)
-    ret = -EACCES;
-  if (ret < 0) {
-    set_req_state_err(s, ret);
-    dump_errno(s);
-    end_header(s, NULL);
-    return;
-  }
-  get_response_params(hdrs, exp_hdrs, &max_age);
+  if(! is_console_dirty_hack) {
+      if (ret == -ENOENT)
+          ret = -EACCES;
+      if (ret < 0) {
+          set_req_state_err(s, ret);
+          dump_errno(s);
+          end_header(s, NULL);
+          return;
+      }
 
+      get_response_params(hdrs, exp_hdrs, &max_age);
+  } else {
+      // clear any error, just send 200 OK in every case
+      s->err.clear();
+  }
   dump_errno(s);
-  dump_access_control(s, origin, req_meth, hdrs.c_str(), exp_hdrs.c_str(), max_age); 
+  if(!is_console_dirty_hack) {
+      dump_access_control(s, origin, req_meth, hdrs.c_str(), exp_hdrs.c_str(), max_age); 
+  }
   end_header(s, NULL);
 }
 
@@ -1717,7 +1758,7 @@ void RGWInitMultipart_ObjStore_S3::send_response()
   if (ret == 0) { 
     dump_start(s);
     s->formatter->open_object_section_in_ns("InitiateMultipartUploadResult",
-		  "http://s3.amazonaws.com/doc/2006-03-01/");
+		  "https://dss.ind-west-1.staging.jiocloudservices.com");
     s->formatter->dump_string("Bucket", s->bucket_name_str);
     s->formatter->dump_string("Key", s->object.name);
     s->formatter->dump_string("UploadId", upload_id);
@@ -1735,7 +1776,7 @@ void RGWCompleteMultipart_ObjStore_S3::send_response()
   if (ret == 0) { 
     dump_start(s);
     s->formatter->open_object_section_in_ns("CompleteMultipartUploadResult",
-			  "http://s3.amazonaws.com/doc/2006-03-01/");
+			  "https://dss.ind-west-1.staging.jiocloudservices.com");
     if (s->info.domain.length())
       s->formatter->dump_format("Location", "%s.%s", s->bucket_name_str.c_str(), s->info.domain.c_str());
     s->formatter->dump_string("Bucket", s->bucket_name_str);
@@ -1767,7 +1808,7 @@ void RGWListMultipart_ObjStore_S3::send_response()
   if (ret == 0) { 
     dump_start(s);
     s->formatter->open_object_section_in_ns("ListPartsResult",
-		    "http://s3.amazonaws.com/doc/2006-03-01/");
+		    "https://dss.ind-west-1.staging.jiocloudservices.com");
     map<uint32_t, RGWUploadPartInfo>::iterator iter;
     map<uint32_t, RGWUploadPartInfo>::reverse_iterator test_iter;
     int cur_max = 0;
@@ -1892,7 +1933,7 @@ void RGWDeleteMultiObj_ObjStore_S3::begin_response()
   dump_start(s);
   end_header(s, this, "application/xml");
   s->formatter->open_object_section_in_ns("DeleteResult",
-                                            "http://s3.amazonaws.com/doc/2006-03-01/");
+                                          "https://dss.ind-west-1.staging.jiocloudservices.com");
 
   rgw_flush_formatter(s, s->formatter);
 }
@@ -2165,34 +2206,99 @@ static bool looks_like_ip_address(const char *bucket)
   return (num_periods == 3);
 }
 
-int RGWHandler_ObjStore_S3::validate_bucket_name(const string& bucket, bool relaxed_names)
-{
-  int ret = RGWHandler_ObjStore::validate_bucket_name(bucket);
-  if (ret < 0)
-    return ret;
-
-  if (bucket.size() == 0)
-    return 0;
-
-  // bucket names must start with a number, letter, or underscore
-  if (!(isalpha(bucket[0]) || isdigit(bucket[0]))) {
-    if (!relaxed_names)
-      return -ERR_INVALID_BUCKET_NAME;
-    else if (!(bucket[0] == '_' || bucket[0] == '.' || bucket[0] == '-'))
-      return -ERR_INVALID_BUCKET_NAME;
-  } 
-
+static int check_bucket_name_characters_for_relaxed(const string& bucket) {
   for (const char *s = bucket.c_str(); *s; ++s) {
     char c = *s;
-    if (isdigit(c) || (c == '.'))
+    if (isdigit(c) || isalpha(c))
       continue;
-    if (isalpha(c))
-      continue;
-    if ((c == '-') || (c == '_'))
+    else if ((c == '-') || (c == '_') || (c == '.'))
       continue;
     // Invalid character
     return -ERR_INVALID_BUCKET_NAME;
   }
+  return 0;
+}
+
+static int check_bucket_name_characters_for_DNS(const string& bucket, int len) {
+  // bucket name length cannot exceed 63 characters.
+  if (len > 63)
+    return -ERR_INVALID_BUCKET_NAME;
+  // bucket name must start with either letter or number.
+  if (!(isalpha(bucket[0]) || isdigit(bucket[0])))
+    return -ERR_INVALID_BUCKET_NAME;
+  // bucket name must end with either letter or number.
+  if (!(isalpha(bucket[len-1]) || isdigit(bucket[len-1])))
+    return -ERR_INVALID_BUCKET_NAME;
+  // bucket name cannot contain a sequence of ".-" , ".." or "-."
+  bool last_char_dot = false; // last character occurred was a '.'
+  bool last_char_hyphen = false; // last character occurred was a '-'
+  for (const char *s = bucket.c_str(); *s; ++s) {
+    char c = *s;
+    // bucket name cannot contain uppercase letters.
+    if (isdigit(c) || (isalpha(c) && islower(c))) {
+      last_char_hyphen = false;
+      last_char_dot = false;
+      continue;
+    }
+    else if (c == '.') {
+      if ((last_char_hyphen || last_char_dot))
+        return -ERR_INVALID_BUCKET_NAME;
+      else {
+        last_char_dot = true;
+        continue;
+      }
+    }
+    else if (c == '-') {
+      if (last_char_dot)
+        return -ERR_INVALID_BUCKET_NAME;
+      else {
+        last_char_hyphen = true;
+        continue;
+      }
+    }
+    // Invalid character (cannot contain anything except alphanumeric, '.' and '-' )
+    else
+      return -ERR_INVALID_BUCKET_NAME;
+  }
+  return 0;
+}
+
+int RGWHandler_ObjStore_S3::validate_bucket_name(const string& bucket, int name_strictness)
+{
+  int ret = RGWHandler_ObjStore::validate_bucket_name(bucket, name_strictness);
+  if (ret < 0)
+    return ret;
+
+  int len = bucket.size();
+  if (len == 0)
+    return 0;
+
+  switch(name_strictness) {
+    case 0:
+      // bucket name cannot contain anything except alphanumeric, '.', '-' and '_'.
+      ret = check_bucket_name_characters_for_relaxed(bucket);
+      break;
+    case 1:
+      // bucket names must start with a number or letter
+      if (!(isalpha(bucket[0]) || isdigit(bucket[0])))
+        return -ERR_INVALID_BUCKET_NAME;
+      // bucket name cannot contain anything except alphanumeric, '.', '-' and '_'.
+      ret = check_bucket_name_characters_for_relaxed(bucket);
+      break;
+
+    case 2:
+      // check other conditions so as to confirm DNS compliance.
+      ret = check_bucket_name_characters_for_DNS(bucket, len);
+      break;
+
+    default: // default is case 1.
+      if (!(isalpha(bucket[0]) || isdigit(bucket[0])))
+        return -ERR_INVALID_BUCKET_NAME;
+      ret = check_bucket_name_characters_for_relaxed(bucket);
+  }
+
+  if (ret < 0 )
+    return ret;
 
   if (looks_like_ip_address(bucket.c_str()))
     return -ERR_INVALID_BUCKET_NAME;
@@ -2203,9 +2309,8 @@ int RGWHandler_ObjStore_S3::validate_bucket_name(const string& bucket, bool rela
 int RGWHandler_ObjStore_S3::init(RGWRados *store, struct req_state *s, RGWClientIO *cio)
 {
   dout(10) << "s->object=" << (!s->object.empty() ? s->object : rgw_obj_key("<NULL>")) << " s->bucket=" << (!s->bucket_name_str.empty() ? s->bucket_name_str : "<NULL>") << dendl;
-
-  bool relaxed_names = s->cct->_conf->rgw_relaxed_s3_bucket_names;
-  int ret = validate_bucket_name(s->bucket_name_str, relaxed_names);
+  int bucket_name_strictness_value = s->cct->_conf->rgw_s3_bucket_name_access_strictness;
+  int ret = validate_bucket_name(s->bucket_name_str, bucket_name_strictness_value);
   if (ret)
     return ret;
   ret = validate_object_name(s->object.name);
@@ -2218,13 +2323,24 @@ int RGWHandler_ObjStore_S3::init(RGWRados *store, struct req_state *s, RGWClient
 
   s->has_acl_header = s->info.env->exists_prefix("HTTP_X_AMZ_GRANT");
 
-  s->copy_source = s->info.env->get("HTTP_X_AMZ_COPY_SOURCE");
+  s->copy_source = s->info.env->get("HTTP_X_JCS_COPY_SOURCE");
+  if (!(s->copy_source)) {
+    // Try for AMZ header too once
+    s->copy_source = s->info.env->get("HTTP_X_AMZ_COPY_SOURCE");
+  }
+
   if (s->copy_source) {
     ret = RGWCopyObj::parse_copy_location(s->copy_source, s->src_bucket_name, s->src_object);
     if (!ret) {
       ldout(s->cct, 0) << "failed to parse copy location" << dendl;
       return -EINVAL;
     }
+    ret = validate_bucket_name(s->src_bucket_name, bucket_name_strictness_value);
+    if (ret)
+      return ret;
+    ret = validate_object_name(s->src_object.name);
+    if (ret)
+      return ret;
   }
 
   s->dialect = "s3";
@@ -2236,15 +2352,45 @@ int RGWHandler_ObjStore_S3::init(RGWRados *store, struct req_state *s, RGWClient
 /*
  * Try to validate S3 auth against keystone s3token interface
  */
-int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id, const string& auth_token, const string& auth_sign) {
+
+int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id,
+                                                         const string& auth_token,
+                                                         const string& auth_sign,
+                                                         const string& action,
+                                                         const string& resource_name,
+                                                         const string& tenant_name,
+                                                         const string& copy_src)
+{
+  /* Handle special case of copy */
+  bool isCopyAction = false;
+  isCopyAction = (action.compare("CopyObject") == 0);
+
   /* prepare keystone url */
+  string action_str = "jrn:jcs:dss:";
+  string copy_action_str = "jrn:jcs:dss:GetObject";
+  string resource_str = "jrn:jcs:dss:";
+  string copy_resource_str = "jrn:jcs:dss:";
+  string implicit_allow = "False";
+  if (isCopyAction) {
+      action_str.append("PutObject");
+  } else {
+      action_str.append(action);
+  }
+  resource_str.append(":Bucket:");
+  copy_resource_str.append(":Bucket:");
+  resource_str.append(resource_name);
+  copy_resource_str.append(copy_src);
   string keystone_url = cct->_conf->rgw_keystone_url;
-  if (keystone_url[keystone_url.size() - 1] != '/')
+  if (keystone_url[keystone_url.size() - 1] != '/') {
     keystone_url.append("/");
-  keystone_url.append("v3/s3tokens");
+  }
+  keystone_url.append(cct->_conf->rgw_keystone_sign_api);
+
+  dout(0) << "DSS INFO: Action string: " << action_str << dendl;
+  dout(0) << "DSS INFO: Resource string: " << resource_str << dendl;
+  dout(0) << "DSS INFO: Final URL: " << keystone_url << dendl;
 
   /* set required headers for keystone request */
-  append_header("X-Auth-Token", cct->_conf->rgw_keystone_admin_token);
   append_header("Content-Type", "application/json");
 
   /* encode token */
@@ -2253,49 +2399,191 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_s3token(const string& auth_id, 
   token_buff.append(auth_token);
   token_buff.encode_base64(token_encoded);
   token_encoded.append((char)0);
+  string cannonical_str(token_encoded.c_str());
+
+  dout(0) << "DSS INFO: Signature: " << auth_sign << dendl;
+  dout(0) << "DSS INFO: Canonical str: " << cannonical_str << dendl;
 
   /* create json credentials request body */
   JSONFormatter credentials(false);
   credentials.open_object_section("");
   credentials.open_object_section("credentials");
-  credentials.dump_string("access", auth_id);
-  credentials.dump_string("token", token_encoded.c_str());
-  credentials.dump_string("signature", auth_sign);
+  credentials.dump_string("access", auth_id.c_str());
+  credentials.dump_string("token", cannonical_str.c_str());
+  credentials.dump_string("signature", auth_sign.c_str());
+  credentials.open_array_section("action_resource_list");
+  credentials.open_object_section("");
+  credentials.dump_string("action", action_str.c_str());
+  credentials.dump_string("resource", resource_str.c_str());
+  credentials.dump_string("implicit_allow", implicit_allow.c_str());
+  credentials.close_section();
+  if (isCopyAction) {
+      credentials.open_object_section("");
+      credentials.dump_string("action", copy_action_str.c_str());
+      credentials.dump_string("resource", copy_resource_str.c_str());
+      credentials.dump_string("implicit_allow", implicit_allow.c_str());
+      credentials.close_section();
+  }
   credentials.close_section();
   credentials.close_section();
-
+  credentials.close_section();
   std::stringstream os;
   credentials.flush(os);
+  tx_buffer.clear();
   set_tx_buffer(os.str());
+  dout(0) << "DSS INFO: Outbound json: " << os.str() << dendl;
+  dout(0) << "DSS INFO: Actual TX buffer: " << tx_buffer.c_str() << dendl;
 
   /* send request */
+  const clock_t begin_time = clock();
   int ret = process("POST", keystone_url.c_str());
+  float ticks = ((clock () - begin_time) * 1000) /  CLOCKS_PER_SEC;
+  dout(0) << "DSS INFO: Keystone response time (milliseconds): " << ticks << dendl;
   if (ret < 0) {
-    dout(2) << "s3 keystone: token validation ERROR: " << rx_buffer.c_str() << dendl;
+    dout(2) << "DSS ERROR: keystone: signature validation ERROR: " << rx_buffer.c_str() << dendl;
     return -EPERM;
   }
+  dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
+  dout(0) << "DSS INFO: Printing RX headers: " << rx_headers_buffer.c_str() << dendl;
 
   /* now parse response */
   if (response.parse(cct, rx_buffer) < 0) {
-    dout(2) << "s3 keystone: token parsing failed" << dendl;
+    dout(2) << "DSS ERROR: keystone:  signature response parsing failed" << dendl;
     return -EPERM;
   }
 
-  /* check if we have a valid role */
-  bool found = false;
-  list<string>::iterator iter;
-  for (iter = roles_list.begin(); iter != roles_list.end(); ++iter) {
-    if ((found=response.user.has_role(*iter))==true)
-      break;
-  }
-
-  if (!found) {
-    ldout(cct, 5) << "s3 keystone: user does not hold a matching role; required roles: " << cct->_conf->rgw_keystone_accepted_roles << dendl;
-    return -EPERM;
+  /* Check if the response is okay */
+  if ((response.user.id).empty()   ||
+      (response.token.tenant.id).empty()) {
+      dout(0) << "DSS ERROR: Response empty. "
+              << " Root account ID: "
+              << response.token.tenant.id.c_str()
+              << " User ID: "
+              << response.user.id.c_str()
+              << dendl;
+      return -EPERM;
   }
 
   /* everything seems fine, continue with this user */
-  ldout(cct, 5) << "s3 keystone: validated token: " << response.token.tenant.name << ":" << response.user.name << " expires: " << response.token.expires << dendl;
+  ldout(cct, 5) << "DSS INFO: keystone validated signature for (root account id : user id) "
+                << response.token.tenant.id << ":"
+                << response.user.id << dendl;
+  return 0;
+}
+
+
+/*
+ * Validate Token sent by console
+ */
+int RGW_Auth_S3_Keystone_ValidateToken::validate_consoleToken(const string& action,
+                                                              const string& resource_name,
+                                                              const string& tenant_name,
+                                                              const string& token,
+                                                              const string& copy_src)
+{
+  /* Handle special case of copy */
+  bool isCopyAction = false;
+  isCopyAction = (action.compare("CopyObject") == 0);
+
+  /* set required headers for keystone request */
+  append_header("X-Auth-Token", token);
+  append_header("Content-Type", "application/json");
+
+  /* prepare keystone url */
+  string action_str = "jrn:jcs:dss:";
+  string copy_action_str = "jrn:jcs:dss:GetObject";
+  string implicit_allow = "False";
+  if (isCopyAction) {
+      action_str.append("PutObject");
+  } else {
+      action_str.append(action);
+  }
+
+  string resource_str = "jrn:jcs:dss:";
+  string copy_resource_str = "jrn:jcs:dss:";
+  resource_str.append(":Bucket:");
+  resource_str.append(resource_name);
+  if (isCopyAction) {
+      copy_resource_str.append(":Bucket:");
+      copy_resource_str.append(copy_src);
+  }
+
+  string keystone_url = cct->_conf->rgw_keystone_url;
+  if (keystone_url[keystone_url.size() - 1] != '/') {
+    keystone_url.append("/");
+  }
+  keystone_url.append(cct->_conf->rgw_keystone_token_api);
+
+  dout(0) << "DSS INFO: Validating token" << dendl;
+  dout(0) << "DSS INFO: Action string: " << action_str << dendl;
+  dout(0) << "DSS INFO: Resource string: " << resource_str << dendl;
+  if (isCopyAction) {
+      dout(0) << "DSS INFO: Copy src Action string: " << copy_action_str << dendl;
+      dout(0) << "DSS INFO: Copy src Resource string: " << copy_resource_str << dendl;
+  }
+  dout(0) << "DSS INFO: Final URL: " << keystone_url << dendl;
+
+  /* create json credentials request body */
+  JSONFormatter credentials(false);
+  credentials.open_object_section("");
+  credentials.open_array_section("action_resource_list");
+  credentials.open_object_section("");
+  credentials.dump_string("action", action_str.c_str());
+  credentials.dump_string("resource", resource_str.c_str());
+  credentials.dump_string("implicit_allow", implicit_allow.c_str());
+  credentials.close_section();
+  if (isCopyAction) {
+      credentials.open_object_section("");
+      credentials.dump_string("action", copy_action_str.c_str());
+      credentials.dump_string("resource", copy_resource_str.c_str());
+      credentials.dump_string("implicit_allow", implicit_allow.c_str());
+      credentials.close_section();
+  }
+  credentials.close_section();
+  credentials.close_section();
+  std::stringstream os;
+  credentials.flush(os);
+  tx_buffer.clear();
+  set_tx_buffer(os.str());
+  dout(0) << "DSS INFO: Outbound json: " << os.str() << dendl;
+  dout(0) << "DSS INFO: Actual TX buffer: " << tx_buffer.c_str() << dendl;
+
+  /* send request */
+  rx_buffer.clear();
+  const clock_t begin_time = clock();
+  int ret = process("POST", keystone_url.c_str());
+  float ticks = ((clock () - begin_time) * 1000) /  CLOCKS_PER_SEC;
+  dout(0) << "DSS INFO: Keystone response time (milliseconds): " << ticks << dendl;
+  if (ret < 0) {
+    dout(0) << "DSS ERROR: Token keystone: token validation ERROR: " << rx_buffer.c_str() << dendl;
+    return -EPERM;
+  }
+
+  dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
+  dout(0) << "DSS INFO: Printing RX headers: " << rx_headers_buffer.c_str() << dendl;
+
+  /* now parse response */
+  if (response.parse(cct, rx_buffer) < 0) {
+    dout(0) << "DSS ERROR: Token keystone: token parsing failed" << dendl;
+    return -EPERM;
+  }
+
+  /* Check if the response is okay */
+  if ((response.user.id).empty()   ||
+      (response.token.tenant.id).empty()) {
+      dout(0) << "DSS ERROR: Response empty. "
+              << " Root account ID: "
+              << response.token.tenant.id.c_str()
+              << " User ID: "
+              << response.user.id.c_str()
+              << dendl;
+      return -EPERM;
+  }
+
+  /* everything seems fine, continue with this user */
+  ldout(cct, 5) << "DSS INFO: keystone validated token for (root account id : user id) "
+                << response.token.tenant.id << ":"
+                << response.user.id << dendl;
   return 0;
 }
 
@@ -2311,6 +2599,29 @@ static void init_anon_user(struct req_state *s)
  */
 int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
 {
+  // Get request header related DSS info and clear flags
+  bool isTokenBasedAuth = (store->auth_method).get_token_validation();
+  /* check for token in presigned URL requests */
+  if(!isTokenBasedAuth && store->ctx()->_conf->rgw_enable_token_based_presigned_url) {
+      string auth_token = s->info.args.get("X-Auth-Token");
+      if(auth_token.size() > 0) {
+          isTokenBasedAuth = true;
+          store->auth_method.set_token(auth_token);
+      }
+  }
+
+  //(store->auth_method).set_token_validation(false);
+  bool isCopyAction = (store->auth_method).get_copy_action();
+  (store->auth_method).set_copy_action(false);
+
+  // Block any ACL request for DSS
+  string qstring = (s->info).request_params;
+  //cct->_conf->rgw_disable_acl_api;
+  if (store->ctx()->_conf->rgw_disable_acl_api && (qstring.compare("acl") == 0)) {
+      dout(0) << "DSS INFO: ACL requests are not supported" << dendl;
+      return -EPERM;
+  }
+
   bool qsr = false;
   string auth_id;
   string auth_sign;
@@ -2330,51 +2641,91 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
     return 0;
   }
 
-  if (!s->http_auth || !(*s->http_auth)) {
-    auth_id = s->info.args.get("AWSAccessKeyId");
-    if (auth_id.size()) {
-      auth_sign = s->info.args.get("Signature");
 
-      string date = s->info.args.get("Expires");
-      time_t exp = atoll(date.c_str());
-      if (now >= exp)
-        return -EPERM;
+  if (!isTokenBasedAuth) {
+      if (!s->http_auth || !(*s->http_auth)) {
+          /* try both JCSAccessKeyId and AWSAccessKeyId for the time being otherwise boto apis will fail */
+          auth_id = s->info.args.get("JCSAccessKeyId");
+          /* if JCSAccessKeyId is not present, try AWSAccessKeyId */
+          if(!auth_id.size()) {
+            auth_id = s->info.args.get("AWSAccessKeyId");
+          }
+          if (auth_id.size()) {
+              auth_sign = s->info.args.get("Signature");
 
-      qsr = true;
-    } else {
-      /* anonymous access */
-      init_anon_user(s);
-      return 0;
-    }
+              string date = s->info.args.get("Expires");
+              time_t exp = atoll(date.c_str());
+              if (now >= exp)
+                  return -EPERM;
+              qsr = true;
+          } else {
+              /* anonymous access */
+              init_anon_user(s);
+              return 0;
+          }
+      } else {
+          // strncmp returns 0 on match. If even one of AWS or JCS match, dont return -EINVAL.
+          if ((strncmp(s->http_auth, "AWS ", 4)) && (strncmp(s->http_auth, "JCS ", 4)))
+              return -EINVAL;
+          string auth_str(s->http_auth + 4);
+          int pos = auth_str.rfind(':');
+          if (pos < 0)
+              return -EINVAL;
+          auth_id = auth_str.substr(0, pos);
+          auth_sign = auth_str.substr(pos + 1);
+      }
   } else {
-    if (strncmp(s->http_auth, "AWS ", 4))
-      return -EINVAL;
-    string auth_str(s->http_auth + 4);
-    int pos = auth_str.rfind(':');
-    if (pos < 0)
-      return -EINVAL;
-
-    auth_id = auth_str.substr(0, pos);
-    auth_sign = auth_str.substr(pos + 1);
+    // DSS console token validation:
+    // Don't want time skew check as tokens expire periodically
+    // keystone will take care of this
+    qsr = true;
   }
 
   /* try keystone auth first */
   int keystone_result = -EINVAL;
   if (store->ctx()->_conf->rgw_s3_auth_use_keystone
       && !store->ctx()->_conf->rgw_keystone_url.empty()) {
-    dout(20) << "s3 keystone: trying keystone auth" << dendl;
+    dout(20) << "DSS INFO: keystone: trying keystone auth" << dendl;
 
     RGW_Auth_S3_Keystone_ValidateToken keystone_validator(store->ctx());
     string token;
 
-    if (!rgw_create_s3_canonical_header(s->info, &s->header_time, token, qsr)) {
+    if (!isTokenBasedAuth &&
+       (!rgw_create_s3_canonical_header(s->info, &s->header_time, token, qsr))) {
         dout(10) << "failed to create auth header\n" << token << dendl;
     } else {
-      keystone_result = keystone_validator.validate_s3token(auth_id, token, auth_sign);
+
+      // Get Resource info for keystone
+      string errmsg;
+      RGWResourceKeystoneInfo resource_info(s, store, isCopyAction);
+      if(resource_info.fetchInfo(errmsg)) {
+          dout(0) << "DSS Error: " << errmsg << dendl;
+          return -EACCES;
+      }
+
+      dout(0) << "DSS INFO: Sending Action to validate: " << resource_info.getAction() << dendl;
+      dout(0) << "DSS INFO: Sending Resource to validate: " << resource_info.getResourceName() << dendl;
+      dout(0) << "DSS INFO: Sending Tenant to validate: " << resource_info.getTenantName() << dendl;
+
+      if (isTokenBasedAuth) {
+          keystone_result = keystone_validator.validate_consoleToken(resource_info.getAction(),
+                                                                     resource_info.getResourceName(),
+                                                                     resource_info.getTenantName(),
+                                                                     (store->auth_method).get_token(),
+                                                                     resource_info.getCopySrc());
+      } else {
+          keystone_result = keystone_validator.validate_s3token(auth_id,
+                                                                token,
+                                                                auth_sign,
+                                                                resource_info.getAction(),
+                                                                resource_info.getResourceName(),
+                                                                resource_info.getTenantName(),
+                                                                resource_info.getCopySrc());
+      }
+
       if (keystone_result == 0) {
 	// Check for time skew first
 	time_t req_sec = s->header_time.sec();
-
 	if ((req_sec < now - RGW_AUTH_GRACE_MINS * 60 ||
 	     req_sec > now + RGW_AUTH_GRACE_MINS * 60) && !qsr) {
 	  dout(10) << "req_sec=" << req_sec << " now=" << now << "; now - RGW_AUTH_GRACE_MINS=" << now - RGW_AUTH_GRACE_MINS * 60 << "; now + RGW_AUTH_GRACE_MINS=" << now + RGW_AUTH_GRACE_MINS * 60 << dendl;
@@ -2382,9 +2733,8 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
 	  return -ERR_REQUEST_TIME_SKEWED;
 	}
 
-
 	s->user.user_id = keystone_validator.response.token.tenant.id;
-        s->user.display_name = keystone_validator.response.token.tenant.name; // wow.
+        s->user.display_name = keystone_validator.response.token.tenant.id; // wow. //<<<<<< DSS needs tenant.name
 
         /* try to store user if it not already exists */
         if (rgw_get_user_info_by_uid(store, keystone_validator.response.token.tenant.id, s->user) < 0) {
@@ -2508,4 +2858,178 @@ RGWHandler *RGWRESTMgr_S3::get_handler(struct req_state *s)
     return new RGWHandler_ObjStore_Bucket_S3;
 
   return new RGWHandler_ObjStore_Obj_S3;
+}
+
+/*
+ * RGWResourceKeystoneInfo::fetchInfo
+ *
+ * Populates action, resource and tenant
+ * name for Keystone validation
+ */
+uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
+{
+    string resource_name;
+    string query_str;
+    int ret = 0;
+    fail_reason = "OK";
+    bool obj_action = false;
+    int special_action = RGWResourceKeystoneInfo::_none;
+
+    // Populate tenant name, resource name and query string
+    resource_name  = (_s->info).request_uri;
+    query_str      = (_s->info).request_params;
+    string copyStr = (_store->auth_method).get_copy_source();
+
+    RGWObjectCtx& obj_ctx = *(RGWObjectCtx *)_s->obj_ctx;
+    if (!resource_name.empty()) {
+        const char *src = resource_name.c_str();
+        if (*src == '/')
+            ++src;
+        string bucket_str(src);
+
+        //get_all_buckets() case
+        if (bucket_str.empty()) {
+            fail_reason = "No bucket received. This is the get all buckets case.";
+            // Populate action string and resource name
+            string allResources("*");
+            setResourceName(allResources);
+            special_action = RGWResourceKeystoneInfo::_list_all_buckets;
+            obj_action = false;
+            if (fetchActionString(_s->op, obj_action, special_action, fail_reason)) {
+                dout(0) << "DSS ERROR: Failed to fetch action string. Reason: " << fail_reason << dendl;
+                fail_reason = "Failed to fetch action string. Reason: " + fail_reason;
+                return -1;
+            }
+            return 0;
+        }
+
+        int pos = bucket_str.find('/');
+        if ((pos < ((signed)bucket_str.length() - 1)) && (pos > 0)) {
+            // If you found a pos for '/' and its not at the end like
+            // "path/". If its in between "path/a"
+            obj_action = true;
+        }
+        if (pos > 0) {
+            bucket_str = bucket_str.substr(0, pos);
+        }
+
+        setResourceName(bucket_str);
+        RGWBucketInfo source_info;
+        /*ret = _store->get_bucket_info(obj_ctx, bucket_str, source_info, NULL);
+        if (ret == 0) {
+            setTenantName(source_info.owner);
+        } else if (obj_action || (_s->op != OP_PUT)) { // Avoid bucket create case
+            dout(0) << "DSS ERROR: Failed to fetch tenant name for bucket " << bucket_str << dendl;
+            dout(0) << "DSS ERROR: OP is " << _s->op << dendl;
+            dout(0) << "DSS ERROR: obj action is  " << obj_action << dendl;
+            fail_reason = "Failed to fetch tenant name for bucket " + bucket_str;
+            return -1;
+        }*/
+        string dummy_str("NULL");
+        setTenantName(dummy_str); //<<<<<< Not supporting cross account access for now
+
+    } else {
+        dout(0) << "DSS ERROR: Failed to fetch resource name" << dendl;
+        fail_reason = "Failed to fetch resource name";
+        return -1;
+    }
+
+    if (getCopyAction()) {
+        special_action = RGWResourceKeystoneInfo::_copy_action;
+        int pos = copyStr.find('/');
+        if (pos > 0) {
+            copyStr = copyStr.substr(0, pos);
+            setCopySrc(copyStr);
+        } else {
+            // Invalid format for x-jcs-copy-source header
+            fail_reason = "Invalid format for x-jcs-copy-source header";
+            return -1;
+        }
+    } else if (query_str.compare("uploads") == 0) {
+        special_action = RGWResourceKeystoneInfo::_multipart_upload;
+    } else if (query_str.compare(0, 8, "uploadId") == 0) {
+        special_action = RGWResourceKeystoneInfo::_multipart_id_action;
+    }
+
+    // Populate action string
+    if (fetchActionString(_s->op, obj_action, special_action, fail_reason)) {
+        dout(0) << "DSS ERROR: Failed to fetch action string. Reason: " << fail_reason << dendl;
+        fail_reason = "Failed to fetch action string. Reason: " + fail_reason;
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * RGWResourceKeystoneInfo::fetchActionString
+ *
+ * Populates action based of OP number
+ */
+uint32_t RGWResourceKeystoneInfo::fetchActionString(uint32_t op,
+                                                    bool     object_action,
+                                                    int      special_action,
+                                                    string&  fail_reason)
+{
+    fail_reason = "OK";
+
+    // Return error for bad action or options
+    if ((op == OP_UNKNOWN) || (op == OP_OPTIONS)) {
+        fail_reason = "Bad action requested";
+        return -1;
+    } else if (op == OP_HEAD) {
+        // Get permission implies Head too
+        op = OP_GET;
+    } else if (op == OP_COPY) {
+        if (!object_action) {
+            fail_reason = "Copy operation only allowed on objects";
+            return -1;
+        }
+    }
+
+    // Handle special actions that do not match their HTTP verbs
+    if (special_action == RGWResourceKeystoneInfo::_copy_action) {
+        setAction("CopyObject");
+        return 0;
+    } else if (special_action == RGWResourceKeystoneInfo::_list_all_buckets) {
+        setAction("ListAllMyBuckets");
+        return 0;
+    } else if (special_action == RGWResourceKeystoneInfo::_multipart_upload) {
+        if (op == OP_GET) {
+            //List active multipart uploads on a bucket
+            setAction("ListBucketMultipartUploads");
+        } else if (op == OP_POST) {
+            //Initiate multipart upload
+            setAction("PutObject");
+        } else {
+            fail_reason = "Bad action requested";
+            return -1;
+        }
+        return 0;
+    } else if (special_action == RGWResourceKeystoneInfo::_multipart_id_action) {
+        if (op == OP_PUT) {
+            //Upload single part in a multipart upload req
+            setAction("PutObject");
+        } else if (op == OP_POST) {
+            //Complete multipart upload
+            setAction("PutObject");
+        } else if (op == OP_DELETE) {
+            //Delete multipart upload
+            setAction("AbortMultipartUpload");
+        } else if (op == OP_GET) {
+            //List multipart upload parts
+            setAction("ListMultipartUploadParts");
+        } else {
+            fail_reason = "Bad action requested";
+            return -1;
+        }
+        return 0;
+    }
+
+    // Handle everything else
+    if (object_action) {
+        op += DSS_KEYSTONE_MAX_ACTIONS;
+    }
+    setAction(ACTIONS[op]);
+    return 0;
 }

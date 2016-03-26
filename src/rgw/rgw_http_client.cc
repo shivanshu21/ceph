@@ -84,7 +84,14 @@ int RGWHTTPClient::process(const char *method, const char *url)
 
   curl_handle = curl_easy_init();
 
-  dout(20) << "sending request to " << url << dendl;
+  dout(20) << "RGWHTTPClient::process sending request to " << url << dendl;
+  list<pair<string, string> >::iterator it;
+  for (it = headers.begin(); it != headers.end(); it++) {
+      dout(0) << "DSS INFO: IAM request header: "
+              << (*it).first
+              << " : "
+              << (*it).second << dendl;
+  }
 
   curl_slist *h = headers_to_slist(headers);
 

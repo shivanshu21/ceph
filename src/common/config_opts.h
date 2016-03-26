@@ -948,7 +948,7 @@ OPTION(rgw_enable_quota_threads, OPT_BOOL, true)
 OPTION(rgw_enable_gc_threads, OPT_BOOL, true)
 
 OPTION(rgw_data, OPT_STR, "/var/lib/ceph/radosgw/$cluster-$id")
-OPTION(rgw_enable_apis, OPT_STR, "s3, swift, swift_auth, admin")
+OPTION(rgw_enable_apis, OPT_STR, "s3, admin") //<<<<<< DSS stopped swift
 OPTION(rgw_cache_enabled, OPT_BOOL, true)   // rgw cache enabled
 OPTION(rgw_cache_lru_size, OPT_INT, 10000)   // num of entries in rgw cache
 OPTION(rgw_socket_path, OPT_STR, "")   // path to unix domain socket, if not specified, rgw will not run as external fcgi
@@ -1017,7 +1017,15 @@ OPTION(rgw_extended_http_attrs, OPT_STR, "") // list of extended attrs that can 
 OPTION(rgw_exit_timeout_secs, OPT_INT, 120) // how many seconds to wait for process to go down before exiting unconditionally
 OPTION(rgw_get_obj_window_size, OPT_INT, 16 << 20) // window size in bytes for single get obj request
 OPTION(rgw_get_obj_max_req_size, OPT_INT, 4 << 20) // max length of a single get obj rados op
-OPTION(rgw_relaxed_s3_bucket_names, OPT_BOOL, false) // enable relaxed bucket name rules for US region buckets
+/*
+* RGW Bucket name restriction option. values can be {0,1,2). Default value is 1.
+* Setting value as 0 : enable relaxed bucket name rules for US region buckets.
+* Setting as 1 : name can't start with a non-alphanumeric. rest same as value =1.
+*
+* Setting as 2 : further restricts name so as to follow AWS S3 bucket naming conventions for non-standard regions.
+*/
+OPTION(rgw_s3_bucket_name_create_strictness, OPT_INT, 2)
+OPTION(rgw_s3_bucket_name_access_strictness, OPT_INT, 1) // option for bucket access. Values similar to above option for creation
 OPTION(rgw_defer_to_bucket_acls, OPT_STR, "") // if the user has bucket perms, use those before key perms (recurse and full_control)
 OPTION(rgw_list_buckets_max_chunk, OPT_INT, 1000) // max buckets to retrieve in a single op when listing user buckets
 OPTION(rgw_md_log_max_shards, OPT_INT, 64) // max shards for metadata log
@@ -1047,9 +1055,22 @@ OPTION(rgw_user_quota_sync_idle_users, OPT_BOOL, false) // whether stats for idl
 OPTION(rgw_user_quota_sync_wait_time, OPT_INT, 3600 * 24) // min time between two full stats sync for non-idle users
 
 OPTION(rgw_multipart_min_part_size, OPT_INT, 5 * 1024 * 1024) // min size for each part (except for last one) in multipart upload
+OPTION(rgw_multipart_part_upload_limit, OPT_INT, 1024) // parts limit in multipart upload
 
 OPTION(rgw_olh_pending_timeout_sec, OPT_INT, 3600) // time until we retire a pending olh change
 OPTION(rgw_user_max_buckets, OPT_U32, 1000) // global option to set max buckets count for all user
+
+OPTION(rgw_enable_cors_response_headers, OPT_BOOL, true) // send cors response headers in case of a token based request
+OPTION(rgw_cors_allowed_origin, OPT_STR, "http://console.staging.jiocloudservices.com") // cors allowed domains
+OPTION(rgw_cors_allowed_methods, OPT_STR, "GET, PUT, HEAD, POST, DELETE, COPY, OPTIONS") // cors allowed methods
+OPTION(rgw_cors_allowed_headers, OPT_STR, "X-Auth-Token, Content-Disposition, Content-Type") // cors allowed headers
+OPTION(rgw_cors_content_disposition_header, OPT_STR, "Content-Disposition") // cors content disposition HEADER
+OPTION(rgw_cors_content_disposition_header_value, OPT_STR, "attachment") // cors content disposition HEADER value
+OPTION(rgw_enable_token_based_presigned_url, OPT_BOOL, true) // enable token based presigned url
+
+OPTION(rgw_disable_acl_api, OPT_BOOL, "true")             // disable all acl getters and setters
+OPTION(rgw_keystone_sign_api, OPT_STR, "v3/sign-auth")    // api to validate signature based authentication requests
+OPTION(rgw_keystone_token_api, OPT_STR, "v3/token-auth")  // api to validate token based authentication requests
 
 OPTION(mutex_perf_counter, OPT_BOOL, false) // enable/disable mutex perf counter
 OPTION(throttler_perf_counter, OPT_BOOL, true) // enable/disable throttler perf counter

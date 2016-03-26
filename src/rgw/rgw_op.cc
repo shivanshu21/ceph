@@ -1260,6 +1260,12 @@ int RGWCreateBucket::verify_permission()
       return ret;
 
     map<string, RGWBucketEnt>& m = buckets.get_buckets();
+    for(map<string, RGWBucketEnt>::iterator it = m.begin(); it !=m.end();++it) {
+	if ( s->bucket_name_str == it->first) {
+		return -ERR_BUCKET_ALREADY_OWNED;
+	}
+	
+    }
     if (m.size() >= s->user.max_buckets) {
       return -ERR_TOO_MANY_BUCKETS;
     }
@@ -1293,6 +1299,10 @@ static int forward_request_to_master(struct req_state *s, obj_version *objv, RGW
 
 void RGWCreateBucket::pre_exec()
 {
+  //validating bucket name as per creation strictness configuration, before creation
+  if (s->cct->_conf->rgw_s3_bucket_name_create_strictness > s->cct->_conf->rgw_s3_bucket_name_access_strictness)
+    ret = dialect_handler->validate_bucket_name(s->bucket_name_str, s->cct->_conf->rgw_s3_bucket_name_create_strictness);
+
   rgw_bucket_object_pre_exec(s);
 }
 
@@ -1305,6 +1315,10 @@ void RGWCreateBucket::execute()
   bool existed;
   rgw_obj obj(store->zone.domain_root, s->bucket_name_str);
   obj_version objv, *pobjv = NULL;
+
+  // Check if pre_exec changed it
+  if (ret < 0)
+    return;
 
   ret = get_params();
   if (ret < 0)
@@ -1422,7 +1436,7 @@ void RGWCreateBucket::execute()
       ldout(s->cct, 0) << "WARNING: failed to unlink bucket: ret=" << ret << dendl;
     }
   } else if (ret == -EEXIST || (ret == 0 && existed)) {
-    ret = -ERR_BUCKET_EXISTS;
+      ret = -ERR_BUCKET_EXISTS;
   }
 }
 
@@ -2700,9 +2714,11 @@ int RGWOptionsCORS::validate_cors_request(RGWCORSConfiguration *cc) {
 
 void RGWOptionsCORS::execute()
 {
+
   ret = read_bucket_cors();
   if (ret < 0)
     return;
+  
 
   origin = s->info.env->get("HTTP_ORIGIN");
   if (!origin) {
@@ -2720,11 +2736,13 @@ void RGWOptionsCORS::execute()
     ret = -EINVAL;
     return;
   }
+  
   if (!cors_exist) {
     dout(2) << "No CORS configuration set yet for this bucket" << dendl;
     ret = -ENOENT;
     return;
   }
+   
   req_hdrs = s->info.env->get("HTTP_ACCESS_CONTROL_REQUEST_HEADERS");
   ret = validate_cors_request(&bucket_cors);
   if (!rule) {
@@ -2991,6 +3009,11 @@ void RGWCompleteMultipart::execute()
   parts = static_cast<RGWMultiCompleteUpload *>(parser.find_first("CompleteMultipartUpload"));
   if (!parts) {
     ret = -EINVAL;
+    return;
+  }
+
+  if (parts->parts.size() > s->cct->_conf->rgw_multipart_part_upload_limit) {
+    ret = -ERANGE;
     return;
   }
 

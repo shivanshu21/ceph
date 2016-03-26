@@ -4,14 +4,17 @@
 #ifndef CEPH_RGW_REST_S3_H
 #define CEPH_RGW_REST_S3_H
 #define TIME_BUF_SIZE 128
+#define RGW_AUTH_GRACE_MINS 15
 
 #include "rgw_op.h"
-#include "rgw_http_errors.h"
 #include "rgw_acl_s3.h"
-#include "rgw_policy_s3.h"
 #include "rgw_keystone.h"
+#include "rgw_policy_s3.h"
+#include "rgw_http_errors.h"
 
-#define RGW_AUTH_GRACE_MINS 15
+// For RGWResourceKeystoneInfo
+#include "rgw_acl.h"
+#include "rgw_rados.h"
 
 void rgw_get_errno_s3(struct rgw_http_errors *e, int err_no);
 
@@ -133,7 +136,7 @@ class RGWPostObj_ObjStore_S3 : public RGWPostObj_ObjStore {
   string boundary;
   string filename;
   bufferlist in_data;
-  map<string, post_form_part, const ltstr_nocase> parts;  
+  map<string, post_form_part, const ltstr_nocase> parts;
   RGWPolicyEnv env;
   RGWPolicy post_policy;
   string err_msg;
@@ -292,6 +295,7 @@ public:
 class RGW_Auth_S3_Keystone_ValidateToken : public RGWHTTPClient {
 private:
   bufferlist rx_buffer;
+  bufferlist rx_headers_buffer;
   bufferlist tx_buffer;
   bufferlist::iterator tx_buffer_it;
   list<string> roles_list;
@@ -314,6 +318,7 @@ public:
   }
 
   int receive_header(void *ptr, size_t len) {
+    rx_headers_buffer.append((char *)ptr, len);
     return 0;
   }
   int receive_data(void *ptr, size_t len) {
@@ -336,8 +341,19 @@ public:
     return l;
   }
 
-  int validate_s3token(const string& auth_id, const string& auth_token, const string& auth_sign);
+  int validate_s3token(const string& auth_id,
+                       const string& auth_token,
+                       const string& auth_sign,
+                       const string& action,
+                       const string& resource_name,
+                       const string& tenant_name,
+                       const string& copy_src);
 
+  int validate_consoleToken(const string& action,
+                            const string& resource_name,
+                            const string& tenant_name,
+                            const string& token,
+                            const string& copy_src);
 };
 
 class RGW_Auth_S3 {
@@ -351,7 +367,7 @@ public:
   RGWHandler_Auth_S3() : RGWHandler_ObjStore() {}
   virtual ~RGWHandler_Auth_S3() {}
 
-  virtual int validate_bucket_name(const string& bucket) {
+  virtual int validate_bucket_name(const string& bucket, int name_strictness) {
     return 0;
   }
 
@@ -371,7 +387,7 @@ public:
   RGWHandler_ObjStore_S3() : RGWHandler_ObjStore() {}
   virtual ~RGWHandler_ObjStore_S3() {}
 
-  int validate_bucket_name(const string& bucket, bool relaxed_names);
+  int validate_bucket_name(const string& bucket, int name_strictness);
 
   virtual int init(RGWRados *store, struct req_state *state, RGWClientIO *cio);
   virtual int authorize() {
@@ -447,5 +463,94 @@ public:
   virtual RGWHandler *get_handler(struct req_state *s);
 };
 
+#define DSS_KEYSTONE_MAX_ACTIONS 7
+class RGWResourceKeystoneInfo {
+    private:
+        string _tenant_name;
+        string _resource_name;
+        string _action;
+        struct req_state* _s;
+        RGWRados*  _store;
+        bool _copy_req;
+        string _copy_src;
+
+        // Based on Enum http_op in rgw_common.h
+        const string ACTIONS[2 * DSS_KEYSTONE_MAX_ACTIONS] = {
+            "ListBucket",
+            "CreateBucket",
+            "DeleteBucket",
+            "HeadBucket",     // Permission same as get
+            "PostBucket",     // Not supported but needed
+            "CopyBucket",     // Not supported but needed
+            "OptionsBucket",  // Not supported but needed
+            "GetObject",
+            "PutObject",
+            "DeleteObject",
+            "HeadObject",     // Permission same as Get
+            "PostObject",
+            "CopyObject",     // Handled differently. Needed.
+            "OptionsObject"   // Not supported but needed
+        };
+
+    public:
+        RGWResourceKeystoneInfo(struct req_state *s, RGWRados *store, bool copyAction) :
+            _s(s), _store(store), _copy_req(copyAction) { }
+        ~RGWResourceKeystoneInfo() { }
+
+        inline string getTenantName()
+        {
+            return _tenant_name;
+        }
+        inline string getResourceName()
+        {
+            return _resource_name;
+        }
+        inline string getAction()
+        {
+            return _action;
+        }
+        inline void setTenantName(string& tenant_name)
+        {
+            _tenant_name = tenant_name;
+        }
+        inline void setResourceName(string& resource_name)
+        {
+            _resource_name = resource_name;
+        }
+        inline void setAction(const string& action)
+        {
+            _action = action;
+        }
+        inline bool getCopyAction()
+        {
+            return _copy_req;
+        }
+        inline void setCopyAction(bool action)
+        {
+            _copy_req = action;
+        }
+        inline string getCopySrc()
+        {
+            return _copy_src;
+        }
+        inline void setCopySrc(string& cpysrc)
+        {
+            _copy_src = cpysrc;
+        }
+
+        enum specialActions {
+            _none = 0,
+            _list_all_buckets,
+            _multipart_upload,
+            _multipart_id_action,
+            _copy_action
+        };
+
+        uint32_t fetchInfo(string& fail_reason);
+        uint32_t fetchActionString(uint32_t op,
+                                   bool object_action,
+                                   int special_action,
+                                   string& fail_reason);
+};
 
 #endif
