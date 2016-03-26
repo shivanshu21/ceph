@@ -2445,13 +2445,21 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   dout(0) << "DSS INFO: Resource string: " << resource_str << dendl;
   dout(0) << "DSS INFO: Final URL: " << keystone_url << dendl;
 
+  /* encode token */
+  bufferlist token_buff;
+  bufferlist token_encoded;
+  token_buff.append(auth_token);
+  token_buff.encode_base64(token_encoded);
+  token_encoded.append((char)0);
+  string cannonical_str(token_encoded.c_str());
+
   /* create json credentials request body */
   JSONFormatter credentials(false);
   credentials.open_object_section("");
   if (is_sign_auth) {
       credentials.open_object_section("credentials");
       credentials.dump_string("access", auth_id.c_str());
-      credentials.dump_string("token", auth_token.c_str());
+      credentials.dump_string("token", cannonical_str.c_str());
       credentials.dump_string("signature", auth_sign.c_str());
   }
   credentials.open_array_section("action_resource_list");
