@@ -1260,6 +1260,12 @@ int RGWCreateBucket::verify_permission()
       return ret;
 
     map<string, RGWBucketEnt>& m = buckets.get_buckets();
+    for(map<string, RGWBucketEnt>::iterator it = m.begin(); it !=m.end();++it) {
+	if ( s->bucket_name_str == it->first) {
+		return -ERR_BUCKET_ALREADY_OWNED;
+	}
+	
+    }
     if (m.size() >= s->user.max_buckets) {
       return -ERR_TOO_MANY_BUCKETS;
     }
