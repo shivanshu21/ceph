@@ -1205,7 +1205,8 @@ int RGWPostObj_ObjStore_S3::get_policy()
                                                                       (store->auth_method).get_token(),
                                                                       "",  /* Access key*/
                                                                       "",  /* Canonical string for signature */
-                                                                      ""); /* Received signature */
+                                                                      "", /* Received signature */
+                                                                      resource_info.getObjectName());
 
             } else {
                 keystone_result = keystone_validator.validate_request(resource_info.getAction(),
@@ -1219,7 +1220,8 @@ int RGWPostObj_ObjStore_S3::get_policy()
                                                                        "",  /* Token string */
                                                                        s3_access_key,  /* Access key */
                                                                        string(encoded_policy.c_str(),encoded_policy.length()),
-                                                                       received_signature_str); /* Received signature */
+                                                                       received_signature_str, /* Received signature */
+                                                                       resource_info.getObjectName());
 
             }
 
@@ -2375,11 +2377,19 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
                                                          const string& token,
                                                          const string& auth_id,
                                                          const string& auth_token,
-                                                         const string& auth_sign)
+                                                         const string& auth_sign,
+                                                         const string& objectname)
 {
   int ret = 0;
   string localAction = action;
   string rootAccount = "";
+
+  /* Certain actions are never cross account
+   * Dont try a cross account call for them */
+  bool is_non_rc_action = false;
+  is_non_rc_action = ((action.compare("CreateBucket") == 0)
+                   || (action.compare("ListAllMyBuckets") == 0)
+                   || is_url_token);
 
   /* Handle special case of copy */
   bool isCopyAction  = false;
@@ -2389,12 +2399,14 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
       // Make recursive call with is_copy set to
       // true and resource set to copy source
       localAction = "GetObject";
+      dout(0) << "DSS INFO: Validating for copy source" << dendl;
       ret = validate_request(localAction, copy_src, tenant_name, is_sign_auth,
                              true, is_cross_account, is_url_token, copy_src,
-                             token, auth_id, auth_token, auth_sign);
+                             token, auth_id, auth_token, auth_sign, objectname);
       if (ret < 0) {
           return ret;
       } else {
+          dout(0) << "DSS INFO: Validating for copy destination" << dendl;
           localAction = "PutObject";
       }
   }
@@ -2410,12 +2422,18 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   } else {
       rootAccount = "";
   }
-
-  /* set required headers for keystone request */
-  if (!is_sign_auth) {
-      append_header("X-Auth-Token", token);
+  /* Set required headers for keystone request
+   * Recursive calls already have headers set */
+  if (!is_copy && !is_cross_account) {
+      if (!is_sign_auth) {
+          if (is_url_token) {
+              append_header("X-Url-Token", token);
+          } else {
+              append_header("X-Auth-Token", token);
+          }
+      }
+      append_header("Content-Type", "application/json");
   }
-  append_header("Content-Type", "application/json");
 
   /* prepare keystone url */
   string implicit_allow = "False";
@@ -2432,12 +2450,18 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   }
   if (is_sign_auth) {
       keystone_url.append(cct->_conf->rgw_keystone_sign_api);
+      if (is_cross_account) {
+          keystone_url.append("-ex");
+      }
       dout(0) << "DSS INFO: Validating Signature" << dendl;
   } else if (is_url_token) {
       keystone_url.append(cct->_conf->rgw_keystone_url_token_api);
       dout(0) << "DSS INFO: Validating presigned URL token" << dendl;
   } else {
       keystone_url.append(cct->_conf->rgw_keystone_token_api);
+      if (is_cross_account) {
+          keystone_url.append("-ex");
+      }
       dout(0) << "DSS INFO: Validating Console token" << dendl;
   }
 
@@ -2466,7 +2490,11 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   credentials.open_object_section("");
   credentials.dump_string("action", action_str.c_str());
   credentials.dump_string("resource", resource_str.c_str());
-  credentials.dump_string("implicit_allow", implicit_allow.c_str());
+  if (is_url_token) {
+      credentials.dump_string("object_name", objectname.c_str());
+  } else {
+      credentials.dump_string("implicit_allow", implicit_allow.c_str());
+  }
   credentials.close_section();
   credentials.close_section();
   if (is_sign_auth) {
@@ -2483,8 +2511,9 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   /* Make request to IAM */
   ret = make_iam_request(keystone_url);
   if (ret < 0) {
-      // If a cross account call has failed, make sure the bucket is not public
       if (is_cross_account) {
+          // If a cross account call has failed,
+          // make sure the bucket is not public
           bool is_public_bucket = false;
           string reason;
           reason = "";
@@ -2511,17 +2540,15 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
 
   /* Check root account ID of the caller against resource name */
   string keystoneTenant = response.token.tenant.id;
-  if (keystoneTenant.compare(tenant_name) != 0) {
+  if (!is_non_rc_action && (keystoneTenant.compare(tenant_name) != 0)) {
       // This case requires cross account validation.
       // Make recursive call with is_cross_account set to true
+      dout(0) << "DSS INFO: Validating for cross account access" << dendl;
       ret = validate_request(action, resource_name, tenant_name,
                              is_sign_auth, is_copy, true,
                              is_url_token, copy_src, token, auth_id,
-                             auth_token, auth_sign);
-      if (ret == -ENOTRECOVERABLE) {
-          // Cross account validation failed because tenant name was missing
-          // Let it fail by itself.
-      } else if (ret < 0) {
+                             auth_token, auth_sign, objectname);
+      if (ret < 0) {
           return ret;
       }
   }
@@ -2537,6 +2564,9 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
  * Call to this function requires tx_buffer to be set beforehand */
 int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_url)
 {
+  /* Clear the buffers */
+  rx_buffer.clear();
+  rx_headers_buffer.clear();
 
   /* send request */
   const clock_t begin_time = clock();
@@ -2690,6 +2720,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
       dout(0) << "DSS INFO: Sending Action to validate: " << resource_info.getAction() << dendl;
       dout(0) << "DSS INFO: Sending Resource to validate: " << resource_info.getResourceName() << dendl;
       dout(0) << "DSS INFO: Sending Tenant to validate: " << resource_info.getTenantName() << dendl;
+      dout(0) << "DSS INFO: Sending Object to validate: " << resource_info.getObjectName() << dendl;
 
       if (isTokenBasedAuth) {
           keystone_result = keystone_validator.validate_request(resource_info.getAction(),
@@ -2703,7 +2734,8 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 (store->auth_method).get_token(),
                                                                 "",  /* Access key*/
                                                                 "",  /* Canonical string for signature */
-                                                                ""); /* Received signature */
+                                                                "",  /* Received signature */
+                                                                resource_info.getObjectName()); /* Object name */
 
       } else {
           keystone_result = keystone_validator.validate_request(resource_info.getAction(),
@@ -2717,7 +2749,8 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 "",  /* Token string */
                                                                 auth_id,  /* Access key */
                                                                 token,  /* Canonical string for signature */
-                                                                auth_sign); /* Received signature */
+                                                                auth_sign, /* Received signature */
+                                                                resource_info.getObjectName()); /* Object name */
 
       }
 
@@ -2740,8 +2773,6 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
         s->user.user_id = keystone_validator.response.token.tenant.id;
         s->user.display_name = keystone_validator.response.token.tenant.id; // wow.
         (store->auth_method).set_acl_main_override(true);
-        //(store->auth_method).
-        //(store->auth_method).
 
         /* try to store user if it not already exists */
         if (rgw_get_user_info_by_uid(store, keystone_validator.response.token.tenant.id, s->user) < 0) {
@@ -2913,11 +2944,18 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
         }
 
         int pos = bucket_str.find('/');
+        string dummy = "";
         if ((pos < ((signed)bucket_str.length() - 1)) && (pos > 0)) {
             // If you found a pos for '/' and its not at the end like
             // "path/". If its in between "path/a"
             obj_action = true;
+            dummy = bucket_str.substr(pos + 1);
+            setObjectName(dummy);
+        } else {
+            dummy = "";
+            setObjectName(dummy);
         }
+
         if (pos > 0) {
             bucket_str = bucket_str.substr(0, pos);
         }

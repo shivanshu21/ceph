@@ -352,7 +352,8 @@ public:
                        const string& token,
                        const string& auth_id,
                        const string& auth_token,
-                       const string& auth_sign);
+                       const string& auth_sign,
+                       const string& objectname);
 
   int make_iam_request(const string& keystone_url);
 };
@@ -470,6 +471,7 @@ class RGWResourceKeystoneInfo {
         string _tenant_name;
         string _resource_name;
         string _action;
+        string _object_name;
         struct req_state* _s;
         RGWRados*  _store;
         bool _copy_req;
@@ -538,6 +540,14 @@ class RGWResourceKeystoneInfo {
         inline void setCopySrc(string& cpysrc)
         {
             _copy_src = cpysrc;
+        }
+        inline string getObjectName()
+        {
+            return _object_name;
+        }
+        inline void setObjectName(string& val)
+        {
+            _object_name = val;
         }
 
         enum specialActions {
