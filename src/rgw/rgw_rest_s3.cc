@@ -2741,7 +2741,8 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 "",  /* Access key*/
                                                                 "",  /* Canonical string for signature */
                                                                 "",  /* Received signature */
-                                                                resource_info.getObjectName()); /* Object name */
+                                                                //resource_info.getObjectName()); /* Object name */
+                                                                s->object.name);
 
       } else {
           keystone_result = keystone_validator.validate_request(resource_info.getAction(),
@@ -2756,7 +2757,8 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 auth_id,  /* Access key */
                                                                 token,  /* Canonical string for signature */
                                                                 auth_sign, /* Received signature */
-                                                                resource_info.getObjectName()); /* Object name */
+                                                                //resource_info.getObjectName()); /* Object name */
+                                                                s->object.name);
 
       }
 
