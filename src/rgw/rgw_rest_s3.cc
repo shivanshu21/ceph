@@ -2724,7 +2724,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
       }
 
       string resource_object_name = "";
-      if ((s != NULL) && (*s != NULL)) {
+      if (s != NULL) {
           resource_object_name = s->object.name;
       }
       dout(0) << "DSS INFO: Sending Action to validate: " << resource_info.getAction() << dendl;
