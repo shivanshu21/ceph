@@ -1069,8 +1069,11 @@ OPTION(rgw_cors_content_disposition_header_value, OPT_STR, "attachment") // cors
 OPTION(rgw_enable_token_based_presigned_url, OPT_BOOL, true) // enable token based presigned url
 
 OPTION(rgw_disable_acl_api, OPT_BOOL, "true")             // disable all acl getters and setters
+OPTION(rgw_chop_rc_zeroes, OPT_BOOL, "false")             // If true, sends 123 as root account to IAM not 00000000123
 OPTION(rgw_keystone_sign_api, OPT_STR, "v3/sign-auth")    // api to validate signature based authentication requests
 OPTION(rgw_keystone_token_api, OPT_STR, "v3/token-auth")  // api to validate token based authentication requests
+OPTION(rgw_keystone_url_token_api, OPT_STR, "url-auth")   // api to validate presigned token URL based authentication requests
+OPTION(dss_regional_url, OPT_STR, "https://dss.ind-west-1.staging.jiocloudservices.com") // URL to be returned in XMLNS during anonymous list all buckets calls
 
 OPTION(mutex_perf_counter, OPT_BOOL, false) // enable/disable mutex perf counter
 OPTION(throttler_perf_counter, OPT_BOOL, true) // enable/disable throttler perf counter

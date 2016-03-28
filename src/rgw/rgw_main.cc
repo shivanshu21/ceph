@@ -537,12 +537,11 @@ static void godown_alarm(int signum)
 static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWClientIO *client_io, OpsLogSocket *olog)
 {
   int ret = 0;
-
+  bool acl_main_override = false;
   client_io->init(g_ceph_context);
 
   req->log_init();
 
-  
   perfcounter->inc(l_rgw_req);
 
   RGWEnv& rgw_env = client_io->get_env();
@@ -614,10 +613,15 @@ static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWC
   }
 
   req->log(s, "verifying op permissions");
+  acl_main_override = (store->auth_method).get_acl_main_override();
+  //bool acl_copy_override = (store->auth_method).get_acl_copy_override();
+  //bool is_copy_action    = (store->auth_method).get_copy_action();
   ret = op->verify_permission();
   if (ret < 0) {
     if (s->system_request) {
       dout(2) << "overriding permissions due to system operation" << dendl;
+    } else if (acl_main_override) {
+      dout(0) << "DSS INFO: ACL decision will be overriden" << dendl;
     } else {
       abort_early(s, op, ret);
       goto done;
@@ -714,8 +718,12 @@ static int civetweb_callback(struct mg_connection *conn) {
   RGWRados *store = pe->store;
   RGWREST *rest = pe->rest;
   OpsLogSocket *olog = pe->olog;
-              
+
   (store->auth_method).set_token_validation(false);
+  (store->auth_method).set_copy_action(false);
+  (store->auth_method).set_url_type_token(false);
+  (store->auth_method).set_acl_main_override(false);
+  (store->auth_method).set_acl_copy_override(false);
 
   /* Go through all the headers to find out if the authentication
    * method required is EC2 signature or tokens.
