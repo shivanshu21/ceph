@@ -2723,10 +2723,14 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
           return -EACCES;
       }
 
+      string resource_object_name = "";
+      if ((s != NULL) && (*s != NULL)) {
+          resource_object_name = s->object.name;
+      }
       dout(0) << "DSS INFO: Sending Action to validate: " << resource_info.getAction() << dendl;
       dout(0) << "DSS INFO: Sending Resource to validate: " << resource_info.getResourceName() << dendl;
       dout(0) << "DSS INFO: Sending Tenant to validate: " << resource_info.getTenantName() << dendl;
-      dout(0) << "DSS INFO: Sending Object to validate: " << resource_info.getObjectName() << dendl;
+      dout(0) << "DSS INFO: Sending Object to validate: " << resource_object_name << dendl;
 
       if (isTokenBasedAuth) {
           keystone_result = keystone_validator.validate_request(resource_info.getAction(),
@@ -2742,7 +2746,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 "",  /* Canonical string for signature */
                                                                 "",  /* Received signature */
                                                                 //resource_info.getObjectName()); /* Object name */
-                                                                s->object.name);
+                                                                resource_object_name);
 
       } else {
           keystone_result = keystone_validator.validate_request(resource_info.getAction(),
@@ -2758,7 +2762,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 token,  /* Canonical string for signature */
                                                                 auth_sign, /* Received signature */
                                                                 //resource_info.getObjectName()); /* Object name */
-                                                                s->object.name);
+                                                                resource_object_name);
 
       }
 
