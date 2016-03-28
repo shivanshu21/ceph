@@ -2411,8 +2411,11 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
       // Make recursive call with is_copy set to
       // true and resource set to copy source
       localAction = "GetObject";
+      int pos = copy_src.find(':');
+      string copy_src_str = copy_src.substr(0, pos);
+      string copy_src_tenant = copy_src.substr(pos + 1);
       dout(0) << "DSS INFO: Validating for copy source" << dendl;
-      ret = validate_request(localAction, copy_src, tenant_name, is_sign_auth,
+      ret = validate_request(localAction, copy_src_str, copy_src_tenant, is_sign_auth,
                              true, is_cross_account, is_url_token, copy_src,
                              token, auth_id, auth_token, auth_sign, objectname);
       if (ret < 0) {
@@ -2427,11 +2430,6 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   if (is_cross_account) {
       if (tenant_name.size() > 0) {
           rootAccount = tenant_name;
-          if (cct->_conf->rgw_chop_rc_zeroes) {
-              // If this option is true, only send 12 digit RC to IAM
-              // This does not affect comparision and we use tenant_name for that
-              rootAccount = rootAccount.substr(rootAccount.size() - 12);
-          }
       } else {
           // root account was not populated. Error out.
           return -ENOTRECOVERABLE;
@@ -2584,6 +2582,8 @@ int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_
     return -EPERM;
   }
   dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
+//  std::string delimiter = "\"\"";
+//  std::string token = s.substr(3,s.find(delimiter));
   dout(0) << "DSS INFO: Printing RX headers: " << rx_headers_buffer.c_str() << dendl;
 
   /* now parse response */
@@ -2978,7 +2978,8 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
         ret = _store->get_bucket_info(obj_ctx, bucket_str, source_info, NULL);
         if (ret == 0) {
             setTenantName(source_info.owner);
-            dout(0) << "Found root account ID on resource " << bucket_str << getTenantName() << dendl;
+            dout(0) << "Found root account ID on resource " << bucket_str
+                    << ". Root account: " << getTenantName() << dendl;
         } else {
             // In cases like create bucket or deleting a non existing bucket
             // set tenant name to NULL
@@ -2998,6 +2999,22 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
         int pos = copyStr.find('/');
         if (pos > 0) {
             copyStr = copyStr.substr(0, pos);
+            string copy_tenant = "";
+
+            RGWBucketInfo source_info;
+            ret = _store->get_bucket_info(obj_ctx, copyStr, source_info, NULL);
+            if (ret == 0) {
+                copy_tenant = source_info.owner;
+                dout(0) << "Found root account ID on copy resource " << copyStr
+                        << ". Root account: " << copy_tenant << dendl;
+            } else {
+                // This should never happen here as the bucket mentioned is copy source
+                // This will happen when your copy source does not exist. This will
+                // error out later by itself.
+                copy_tenant = "";
+            }
+            copyStr.append(":");
+            copyStr.append(copy_tenant);
             setCopySrc(copyStr);
         } else {
             // Invalid format for x-jcs-copy-source header
