@@ -1068,7 +1068,7 @@ OPTION(rgw_cors_content_disposition_header, OPT_STR, "Content-Disposition") // c
 OPTION(rgw_cors_content_disposition_header_value, OPT_STR, "attachment") // cors content disposition HEADER value
 OPTION(rgw_enable_token_based_presigned_url, OPT_BOOL, true) // enable token based presigned url
 
-OPTION(rgw_disable_acl_api, OPT_BOOL, "true")             // disable all acl getters and setters
+OPTION(rgw_disable_acl_api, OPT_BOOL, true)             // disable all acl getters and setters
 OPTION(rgw_keystone_sign_api, OPT_STR, "v3/sign-auth")    // api to validate signature based authentication requests
 OPTION(rgw_keystone_token_api, OPT_STR, "v3/token-auth")  // api to validate token based authentication requests
 OPTION(rgw_keystone_url_token_api, OPT_STR, "url-auth")   // api to validate presigned token URL based authentication requests
