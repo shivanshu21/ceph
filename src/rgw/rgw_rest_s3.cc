@@ -2387,14 +2387,26 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   /* Certain actions are never cross account
    * Dont try a cross account call for them */
   bool is_non_rc_action = false;
-  is_non_rc_action = ((action.compare("CreateBucket") == 0)
-                   || (action.compare("ListAllMyBuckets") == 0)
+  is_non_rc_action = ((localAction.compare("CreateBucket") == 0)
+                   || (localAction.compare("ListAllMyBuckets") == 0)
                    || is_url_token);
+
+  /* Set required headers for keystone request
+   * Recursive calls already have headers set */
+  if (!is_copy && !is_cross_account) {
+      if (!is_sign_auth) {
+          if (is_url_token) {
+              append_header("X-Url-Token", token);
+          } else {
+              append_header("X-Auth-Token", token);
+          }
+      }
+      append_header("Content-Type", "application/json");
+  }
 
   /* Handle special case of copy */
   bool isCopyAction  = false;
-  isCopyAction = (action.compare("CopyObject") == 0);
-
+  isCopyAction = (localAction.compare("CopyObject") == 0);
   if (isCopyAction) {
       // Make recursive call with is_copy set to
       // true and resource set to copy source
@@ -2415,6 +2427,11 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   if (is_cross_account) {
       if (tenant_name.size() > 0) {
           rootAccount = tenant_name;
+          if (cct->_conf->rgw_chop_rc_zeroes) {
+              // If this option is true, only send 12 digit RC to IAM
+              // This does not affect comparision and we use tenant_name for that
+              rootAccount = rootAccount.substr(rootAccount.size() - 12);
+          }
       } else {
           // root account was not populated. Error out.
           return -ENOTRECOVERABLE;
@@ -2422,23 +2439,11 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   } else {
       rootAccount = "";
   }
-  /* Set required headers for keystone request
-   * Recursive calls already have headers set */
-  if (!is_copy && !is_cross_account) {
-      if (!is_sign_auth) {
-          if (is_url_token) {
-              append_header("X-Url-Token", token);
-          } else {
-              append_header("X-Auth-Token", token);
-          }
-      }
-      append_header("Content-Type", "application/json");
-  }
 
   /* prepare keystone url */
   string implicit_allow = "False";
   string action_str = "jrn:jcs:dss:";
-  action_str.append(action);
+  action_str.append(localAction);
   string resource_str = "jrn:jcs:dss:";
   resource_str.append(rootAccount);
   resource_str.append(":Bucket:");
@@ -2544,7 +2549,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
       // This case requires cross account validation.
       // Make recursive call with is_cross_account set to true
       dout(0) << "DSS INFO: Validating for cross account access" << dendl;
-      ret = validate_request(action, resource_name, tenant_name,
+      ret = validate_request(localAction, resource_name, tenant_name,
                              is_sign_auth, is_copy, true,
                              is_url_token, copy_src, token, auth_id,
                              auth_token, auth_sign, objectname);
@@ -2569,10 +2574,11 @@ int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_
   rx_headers_buffer.clear();
 
   /* send request */
-  const clock_t begin_time = clock();
+  utime_t begin_time = ceph_clock_now(g_ceph_context);
   int ret = process("POST", keystone_url.c_str());
-  float ticks = ((clock () - begin_time) * 1000) /  CLOCKS_PER_SEC;
-  dout(0) << "DSS INFO: Keystone response time (milliseconds): " << ticks << dendl;
+  utime_t end_time = ceph_clock_now(g_ceph_context);
+  end_time = end_time - begin_time;
+  dout(0) << "DSS INFO: Keystone response time (milliseconds): " << end_time.to_msec() << dendl;
   if (ret < 0) {
     dout(2) << "DSS ERROR: keystone validation error: " << rx_buffer.c_str() << dendl;
     return -EPERM;
@@ -2770,8 +2776,15 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
          return -ERR_REQUEST_TIME_SKEWED;
         }
 
-        s->user.user_id = keystone_validator.response.token.tenant.id;
-        s->user.display_name = keystone_validator.response.token.tenant.id; // wow.
+        string tenant_id_str = keystone_validator.response.token.tenant.id;
+        /*tenant_id_str = tenant_id_str.substr(tenant_id_str.size() - 12);
+        dout(0) << "DSS INFO: Ignoring root account ID zeroes: "
+                << keystone_validator.response.token.tenant.id << " to "
+                << tenant_id_str
+                << dendl;*/
+
+        s->user.user_id = tenant_id_str;
+        s->user.display_name = tenant_id_str;
         (store->auth_method).set_acl_main_override(true);
 
         /* try to store user if it not already exists */
