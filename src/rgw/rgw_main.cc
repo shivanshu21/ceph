@@ -621,7 +621,7 @@ static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWC
   if (ret < 0) {
     if (s->system_request) {
       dout(2) << "overriding permissions due to system operation" << dendl;
-    } else if (acl_main_override && (ret != -ERR_BUCKET_ALREADY_OWNED) && (ret != -13)) { //<<<<<<
+    } else if (acl_main_override && (ret != -ERR_BUCKET_ALREADY_OWNED)) { //<<<<<<
       dout(0) << "DSS INFO: ACL decision will be overriden" << dendl;
     } else {
       abort_early(s, op, ret);
