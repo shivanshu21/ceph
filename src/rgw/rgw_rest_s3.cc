@@ -1155,6 +1155,7 @@ int RGWPostObj_ObjStore_S3::get_policy()
     RGWUserInfo user_info;
     string received_signature_str;
     string s3_access_key;
+    string iamerror = "";
 
     if (part_bl("policy", &encoded_policy)) {
         if (!isTokenBasedAuth) {
@@ -1206,7 +1207,8 @@ int RGWPostObj_ObjStore_S3::get_policy()
                                                                       "",  /* Access key*/
                                                                       "",  /* Canonical string for signature */
                                                                       "", /* Received signature */
-                                                                      resource_info.getObjectName());
+                                                                      resource_info.getObjectName(),
+                                                                      iamerror);
 
             } else {
                 keystone_result = keystone_validator.validate_request(resource_info.getAction(),
@@ -1221,7 +1223,8 @@ int RGWPostObj_ObjStore_S3::get_policy()
                                                                        s3_access_key,  /* Access key */
                                                                        string(encoded_policy.c_str(),encoded_policy.length()),
                                                                        received_signature_str, /* Received signature */
-                                                                       resource_info.getObjectName());
+                                                                       resource_info.getObjectName(),
+                                                                       iamerror);
 
             }
 
@@ -2378,7 +2381,9 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
                                                          const string& auth_id,
                                                          const string& auth_token,
                                                          const string& auth_sign,
-                                                         const string& objectname)
+                                                         const string& objectname,
+                                                         string& iamerror)
+        
 {
   int ret = 0;
   string localAction = action;
@@ -2417,7 +2422,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
       dout(0) << "DSS INFO: Validating for copy source" << dendl;
       ret = validate_request(localAction, copy_src_str, copy_src_tenant, is_sign_auth,
                              true, is_cross_account, is_url_token, copy_src,
-                             token, auth_id, auth_token, auth_sign, objectname);
+                             token, auth_id, auth_token, auth_sign, objectname, iamerror);
       if (ret < 0) {
           return ret;
       } else {
@@ -2512,7 +2517,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   dout(0) << "DSS INFO: Actual TX buffer: " << tx_buffer.c_str() << dendl;
 
   /* Make request to IAM */
-  ret = make_iam_request(keystone_url);
+  ret = make_iam_request(keystone_url, iamerror);
   if (ret < 0) {
       if (is_cross_account) {
           // If a cross account call has failed,
@@ -2550,7 +2555,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
       ret = validate_request(localAction, resource_name, tenant_name,
                              is_sign_auth, is_copy, true,
                              is_url_token, copy_src, token, auth_id,
-                             auth_token, auth_sign, objectname);
+                             auth_token, auth_sign, objectname, iamerror);
       if (ret < 0) {
           return ret;
       }
@@ -2565,7 +2570,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
 
 /* Make the CURL call to IAM
  * Call to this function requires tx_buffer to be set beforehand */
-int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_url)
+int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_url, string& iamerror)
 {
   /* Clear the buffers */
   rx_buffer.clear();
@@ -2585,6 +2590,23 @@ int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_
 //  std::string delimiter = "\"\"";
 //  std::string token = s.substr(3,s.find(delimiter));
   dout(0) << "DSS INFO: Printing RX headers: " << rx_headers_buffer.c_str() << dendl;
+  char *rxbuffer = strdup(rx_buffer.c_str());
+  char *savedptr;
+  char *p = strtok_r(rxbuffer, "\"" , &savedptr);
+  vector<string> tokens;
+  while (p) {
+      string tok = p;
+      dout(0) << "Printing RX buffer tokens: " << tok << dendl;
+      tokens.push_back(tok);
+      p = strtok_r(NULL, "\"", &savedptr);
+  }
+
+  // assuming error from IAM is always in this format
+  // {"error": {"message": "The resource could not be found.", "code": 404, "title": "Not Found"}}
+  if(tokens.size() >= 5 && !strcmp(tokens[1].c_str(), "error") && !strcmp(tokens[3].c_str(), "message")) {
+    iamerror = "IAM_ERROR: " +  tokens[5];
+  }
+  free(rxbuffer);
 
   /* now parse response */
   if (response.parse(cct, rx_buffer) < 0) {
@@ -2624,6 +2646,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
   string auth_sign;
   time_t now;
   time(&now);
+  string iamerror = "";
 
   // Get request header related DSS info
   dss_endpoint::endpoint = store->ctx()->_conf->dss_regional_url;
@@ -2710,6 +2733,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
 
     /* Make canonical string */
     string token;
+  //  s3->err.message = "";
     if (!isTokenBasedAuth &&
        (!rgw_create_s3_canonical_header(s->info, &s->header_time, token, qsr))) {
         dout(10) << "Failed to create auth header\n" << token << dendl;
@@ -2745,9 +2769,9 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 "",  /* Access key*/
                                                                 "",  /* Canonical string for signature */
                                                                 "",  /* Received signature */
-                                                                //resource_info.getObjectName()); /* Object name */
-                                                                resource_object_name);
-
+                                                                resource_object_name,
+                                                                iamerror);
+        
       } else {
           keystone_result = keystone_validator.validate_request(resource_info.getAction(),
                                                                 resource_info.getResourceName(),
@@ -2761,10 +2785,11 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 auth_id,  /* Access key */
                                                                 token,  /* Canonical string for signature */
                                                                 auth_sign, /* Received signature */
-                                                                //resource_info.getObjectName()); /* Object name */
-                                                                resource_object_name);
+                                                                resource_object_name,
+                                                                iamerror);
 
       }
+
 
       if (keystone_result == 0) {
 
@@ -2813,6 +2838,9 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
   if (keystone_result < 0) {
     /* get the user info */
     if (rgw_get_user_info_by_access_key(store, auth_id, s->user) < 0) {
+      if (iamerror != "" ) {
+        s->err.message = iamerror;
+      }
       dout(5) << "error reading user info, uid=" << auth_id << " can't authenticate" << dendl;
       return -ERR_INVALID_ACCESS_KEY;
     }

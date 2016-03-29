@@ -353,9 +353,10 @@ public:
                        const string& auth_id,
                        const string& auth_token,
                        const string& auth_sign,
-                       const string& objectname);
+                       const string& objectname,
+                       string& iamerror);
 
-  int make_iam_request(const string& keystone_url);
+  int make_iam_request(const string& keystone_url, string& iamerror);
 };
 
 class RGW_Auth_S3 {
