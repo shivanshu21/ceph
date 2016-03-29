@@ -299,7 +299,9 @@ void set_req_state_err(struct req_state *s, int err_no)
     s->err.http_ret = r->http_ret;
     s->err.s3_code = r->s3_code;
       if (r->s3_err_message) {
+          if ((s->err.message).empty()) {
 		s->err.message = r->s3_err_message;	
+          }
       }
     return;
   }
