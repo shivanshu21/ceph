@@ -591,6 +591,8 @@ static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWC
     abort_early(s, op, -ERR_USER_SUSPENDED);
     goto done;
   }
+
+  // This reads the ACL on the bucket or object
   req->log(s, "reading permissions");
   ret = handler->read_permissions(op);
   if (ret < 0) {
@@ -598,6 +600,7 @@ static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWC
     goto done;
   }
 
+  // This basically looks into quotas associated with users
   req->log(s, "init op");
   ret = op->init_processing();
   if (ret < 0) {
@@ -614,13 +617,11 @@ static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWC
 
   req->log(s, "verifying op permissions");
   acl_main_override = (store->auth_method).get_acl_main_override();
-  //bool acl_copy_override = (store->auth_method).get_acl_copy_override();
-  //bool is_copy_action    = (store->auth_method).get_copy_action();
   ret = op->verify_permission();
   if (ret < 0) {
     if (s->system_request) {
       dout(2) << "overriding permissions due to system operation" << dendl;
-    } else if (acl_main_override) {
+    } else if (acl_main_override && (ret != -ERR_BUCKET_ALREADY_OWNED)) { //<<<<<<
       dout(0) << "DSS INFO: ACL decision will be overriden" << dendl;
     } else {
       abort_early(s, op, ret);
