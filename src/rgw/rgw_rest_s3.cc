@@ -2769,7 +2769,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 "",  /* Access key*/
                                                                 "",  /* Canonical string for signature */
                                                                 "",  /* Received signature */
-                                                                s->object.name,
+                                                                resource_object_name,
                                                                 iamerror);
         
       } else {
@@ -2785,7 +2785,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 auth_id,  /* Access key */
                                                                 token,  /* Canonical string for signature */
                                                                 auth_sign, /* Received signature */
-                                                                s->object.name,
+                                                                resource_object_name,
                                                                 iamerror);
 
       }
