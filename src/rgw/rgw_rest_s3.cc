@@ -2383,7 +2383,6 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
                                                          const string& auth_sign,
                                                          const string& objectname,
                                                          string& iamerror)
-        
 {
   int ret = 0;
   string localAction = action;
@@ -2511,10 +2510,14 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   credentials.close_section();
   std::stringstream os;
   credentials.flush(os);
-  tx_buffer.clear();
-  set_tx_buffer(os.str());
+  set_tx_buffer(os.str()); // clears automatically
+  string bufferprinter = "";
+  tx_buffer.copy(0, tx_buffer.length(), bufferprinter);
+  dout(0) << "DSS INFO: \n\n" << dendl;
   dout(0) << "DSS INFO: Outbound json: " << os.str() << dendl;
-  dout(0) << "DSS INFO: Actual TX buffer: " << tx_buffer.c_str() << dendl;
+  dout(0) << "DSS INFO: \n\n" << dendl;
+  dout(0) << "DSS INFO: Actual TX buffer: " << bufferprinter << dendl;
+  dout(0) << "DSS INFO: \n\n" << dendl;
 
   /* Make request to IAM */
   ret = make_iam_request(keystone_url, iamerror);
@@ -2575,6 +2578,8 @@ int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_
   /* Clear the buffers */
   rx_buffer.clear();
   rx_headers_buffer.clear();
+  string bufferprinter = "";
+  string bufferheaderprinter = "";
 
   /* send request */
   utime_t begin_time = ceph_clock_now(g_ceph_context);
@@ -2582,31 +2587,33 @@ int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_
   utime_t end_time = ceph_clock_now(g_ceph_context);
   end_time = end_time - begin_time;
   dout(0) << "DSS INFO: Keystone response time (milliseconds): " << end_time.to_msec() << dendl;
+  rx_buffer.copy(0, rx_buffer.length(), bufferprinter);
+  rx_headers_buffer.copy(0, rx_headers_buffer.length(), bufferheaderprinter);
   if (ret < 0) {
-    dout(2) << "DSS ERROR: keystone validation error: " << rx_buffer.c_str() << dendl;
+    dout(2) << "DSS ERROR: keystone validation error: " << bufferprinter << dendl;
     return -EPERM;
   }
-  dout(0) << "DSS INFO: Printing RX buffer: " << rx_buffer.c_str() << dendl;
-//  std::string delimiter = "\"\"";
-//  std::string token = s.substr(3,s.find(delimiter));
-  dout(0) << "DSS INFO: Printing RX headers: " << rx_headers_buffer.c_str() << dendl;
-  char *rxbuffer = strdup(rx_buffer.c_str());
+  dout(0) << "DSS INFO: Printing RX buffer: " << bufferprinter << dendl;
+  dout(0) << "DSS INFO: Printing RX headers: " << bufferheaderprinter << dendl;
+
+
+  /* Populate iamerror */
+  char *rxbuffer = strdup(bufferprinter.c_str());
   char *savedptr;
   char *p = strtok_r(rxbuffer, "\"" , &savedptr);
   vector<string> tokens;
   while (p) {
       string tok = p;
-      dout(0) << "Printing RX buffer tokens: " << tok << dendl;
       tokens.push_back(tok);
       p = strtok_r(NULL, "\"", &savedptr);
   }
-
   // assuming error from IAM is always in this format
   // {"error": {"message": "The resource could not be found.", "code": 404, "title": "Not Found"}}
   if(tokens.size() >= 5 && !strcmp(tokens[1].c_str(), "error") && !strcmp(tokens[3].c_str(), "message")) {
     iamerror = "IAM_ERROR: " +  tokens[5];
   }
   free(rxbuffer);
+
 
   /* now parse response */
   if (response.parse(cct, rx_buffer) < 0) {
