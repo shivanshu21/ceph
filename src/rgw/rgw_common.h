@@ -1067,10 +1067,12 @@ class authorization_method {
     }
 
 
-    authorization_method(bool method, bool action, bool url_token) :
+    authorization_method(bool method, bool action, bool url_token, bool acl_main, bool acl_copy) :
       _token_validation(method),
       _copy_action(action),
-      _url_type_token(url_token) { }
+      _url_type_token(url_token),
+      _acl_main_override(acl_main),
+      _acl_copy_override(acl_copy) { }
     ~authorization_method() { }
 };
 

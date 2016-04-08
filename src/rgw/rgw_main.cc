@@ -580,7 +580,7 @@ static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWC
         (amz_metadata_directive != NULL && !strcmp(amz_metadata_directive, "COPY")) 
         || (jcs_metadata_directive != NULL && !strcmp(jcs_metadata_directive, "COPY"))
       ) 
-      || 
+      &&
       (amz_copy_source != NULL || jcs_copy_source != NULL)
     ) {
     (s->auth_method).set_copy_action(true);
