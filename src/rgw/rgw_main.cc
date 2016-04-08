@@ -730,10 +730,20 @@ static int civetweb_callback(struct mg_connection *conn) {
    * method required is EC2 signature or tokens.
    * While there can be at most 100 header fields in a HTTP request,
    * http_headers is an array of size 64 elements inside civetweb */
-  for (int i = 0; i < 64; i++) {
+
+  dout(1) << "DSS INFO: Num headers is: " << req_info->num_headers << dendl;
+  for (int i = 0; i < req_info->num_headers; i++) {
       if ((req_info->http_headers[i]).name != NULL) {
           string name_str((req_info->http_headers[i]).name);
           string value_str((req_info->http_headers[i]).value);
+
+          // Avoid garbage in headers
+          if ((name_str.compare("") == 0) &&
+              (value_str.compare("") == 0)) {
+              dout(1) << "DSS INFO: Terminating headers loop" << dendl;
+              break;
+          }
+
           dout(1) << "DSS INFO: CIVETWEB HEADER NAME: " << name_str << dendl;
           dout(1) << "DSS INFO: CIVETWEB HEADER VALUE: " << value_str << dendl;
 
