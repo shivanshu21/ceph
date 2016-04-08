@@ -1148,10 +1148,10 @@ int RGWPostObj_ObjStore_S3::get_params()
 int RGWPostObj_ObjStore_S3::get_policy()
 {
     bufferlist encoded_policy;
-    bool isTokenBasedAuth = (store->auth_method).get_token_validation();
-    //(store->auth_method).set_token_validation(false);
-    bool isCopyAction = (store->auth_method).get_copy_action();
-    (store->auth_method).set_copy_action(false);
+    bool isTokenBasedAuth = (s->auth_method).get_token_validation();
+    //(s->auth_method).set_token_validation(false);
+    bool isCopyAction = (s->auth_method).get_copy_action();
+    (s->auth_method).set_copy_action(false);
     RGWUserInfo user_info;
     string received_signature_str;
     string s3_access_key;
@@ -1201,9 +1201,9 @@ int RGWPostObj_ObjStore_S3::get_policy()
                                                                       false, /* Is sign auth */
                                                                       false, /* Is copy */
                                                                       false, /* Is cross account */
-                                                                      (store->auth_method).get_url_type_token(),
+                                                                      (s->auth_method).get_url_type_token(),
                                                                       resource_info.getCopySrc(),
-                                                                      (store->auth_method).get_token(),
+                                                                      (s->auth_method).get_token(),
                                                                       "",  /* Access key*/
                                                                       "",  /* Canonical string for signature */
                                                                       "", /* Received signature */
@@ -1217,7 +1217,7 @@ int RGWPostObj_ObjStore_S3::get_policy()
                                                                       true, /* Is sign auth */
                                                                       false, /* Is copy */
                                                                       false, /* Is cross account */
-                                                                      (store->auth_method).get_url_type_token(),
+                                                                      (s->auth_method).get_url_type_token(),
                                                                        resource_info.getCopySrc(),
                                                                        "",  /* Token string */
                                                                        s3_access_key,  /* Access key */
@@ -2657,17 +2657,17 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
 
   // Get request header related DSS info
   dss_endpoint::endpoint = store->ctx()->_conf->dss_regional_url;
-  bool isTokenBasedAuth = (store->auth_method).get_token_validation();
-  bool isCopyAction = (store->auth_method).get_copy_action();
+  bool isTokenBasedAuth = (s->auth_method).get_token_validation();
+  bool isCopyAction = (s->auth_method).get_copy_action();
 
   // check for token in presigned URL requests
   if(!isTokenBasedAuth && store->ctx()->_conf->rgw_enable_token_based_presigned_url) {
       string url_token = s->info.args.get("X-Url-Token");
       if(url_token.size() > 0) {
           isTokenBasedAuth = true;
-          (store->auth_method).set_token_validation(true);
-          (store->auth_method).set_token(url_token);
-          (store->auth_method).set_url_type_token(true);
+          (s->auth_method).set_token_validation(true);
+          (s->auth_method).set_token(url_token);
+          (s->auth_method).set_url_type_token(true);
       }
   }
 
@@ -2770,9 +2770,9 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 false, /* Is sign auth */
                                                                 false, /* Is copy */
                                                                 false, /* Is cross account */
-                                                                (store->auth_method).get_url_type_token(),
+                                                                (s->auth_method).get_url_type_token(),
                                                                 resource_info.getCopySrc(),
-                                                                (store->auth_method).get_token(),
+                                                                (s->auth_method).get_token(),
                                                                 "",  /* Access key*/
                                                                 "",  /* Canonical string for signature */
                                                                 "",  /* Received signature */
@@ -2786,7 +2786,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 true, /* Is sign auth */
                                                                 false, /* Is copy */
                                                                 false, /* Is cross account */
-                                                                (store->auth_method).get_url_type_token(),
+                                                                (s->auth_method).get_url_type_token(),
                                                                 resource_info.getCopySrc(),
                                                                 "",  /* Token string */
                                                                 auth_id,  /* Access key */
@@ -2823,7 +2823,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
 
         s->user.user_id = tenant_id_str;
         s->user.display_name = tenant_id_str;
-        (store->auth_method).set_acl_main_override(true);
+        (s->auth_method).set_acl_main_override(true);
 
         /* try to store user if it not already exists */
         if (rgw_get_user_info_by_uid(store, keystone_validator.response.token.tenant.id, s->user) < 0) {
@@ -2972,7 +2972,7 @@ uint32_t RGWResourceKeystoneInfo::fetchInfo(string& fail_reason)
     // Populate resource name and query string
     resource_name  = (_s->info).request_uri;
     query_str      = (_s->info).request_params;
-    string copyStr = (_store->auth_method).get_copy_source();
+    string copyStr = (_s->auth_method).get_copy_source();
 
     RGWObjectCtx& obj_ctx = *(RGWObjectCtx *)_s->obj_ctx;
     if (!resource_name.empty()) {

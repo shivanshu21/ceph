@@ -558,6 +558,41 @@ static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWC
   dout(1) << "====== starting new request trans="  << s->trans_id.c_str() << " =====" << dendl;
   //req->log_format(s, "initializing for trans_id = %s", s->trans_id.c_str());
 
+  /* Logic for checking whether the request is token based or signature based */
+  const char* token_value = s->info.env->get("HTTP_X_AUTH_TOKEN");
+  if(token_value != NULL) {
+    // This request has a token not EC2 credentials
+    (s->auth_method).set_token_validation(true);
+    // Fill the token string even if it is blank
+    // Keystone will handle the rest
+    string value_str(token_value);
+    (s->auth_method).set_token(value_str);
+  }
+  dout(1) << "DSS INFO: token validation set to: " << (s->auth_method).get_token_validation() << dendl;
+
+  const char* amz_metadata_directive = s->info.env->get("HTTP_X_AMZ_METADATA_DIRECTIVE");
+  const char* jcs_metadata_directive = s->info.env->get("HTTP_X_JCS_METADATA_DIRECTIVE");
+  const char* amz_copy_source = s->info.env->get("HTTP_X_AMZ_COPY_SOURCE");
+  const char* jcs_copy_source = s->info.env->get("HTTP_X_JCS_COPY_SOURCE");
+
+  if(
+      (
+        (amz_metadata_directive != NULL && !strcmp(amz_metadata_directive, "COPY")) 
+        || (jcs_metadata_directive != NULL && !strcmp(jcs_metadata_directive, "COPY"))
+      ) 
+      &&
+      (amz_copy_source != NULL || jcs_copy_source != NULL)
+    ) {
+    (s->auth_method).set_copy_action(true);
+    if(amz_copy_source != NULL) {
+       (s->auth_method).set_copy_source(amz_copy_source);
+    }
+    if(jcs_copy_source != NULL) {
+       (s->auth_method).set_copy_source(jcs_copy_source);
+    }
+  }
+
+
   RGWOp *op = NULL;
   int init_error = 0;
   bool should_log = false;
@@ -616,7 +651,7 @@ static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWC
   }
 
   req->log(s, "verifying op permissions");
-  acl_main_override = (store->auth_method).get_acl_main_override();
+  acl_main_override = (s->auth_method).get_acl_main_override();
   ret = op->verify_permission();
   if (ret < 0) {
     if (s->system_request) {
@@ -720,12 +755,13 @@ static int civetweb_callback(struct mg_connection *conn) {
   RGWREST *rest = pe->rest;
   OpsLogSocket *olog = pe->olog;
 
-  (store->auth_method).set_token_validation(false);
+ /*
+ (store->auth_method).set_token_validation(false);
   (store->auth_method).set_copy_action(false);
   (store->auth_method).set_url_type_token(false);
   (store->auth_method).set_acl_main_override(false);
   (store->auth_method).set_acl_copy_override(false);
-
+*/
   /* Go through all the headers to find out if the authentication
    * method required is EC2 signature or tokens.
    * While there can be at most 100 header fields in a HTTP request,
@@ -747,6 +783,7 @@ static int civetweb_callback(struct mg_connection *conn) {
           dout(1) << "DSS INFO: CIVETWEB HEADER NAME: " << name_str << dendl;
           dout(1) << "DSS INFO: CIVETWEB HEADER VALUE: " << value_str << dendl;
 
+        /*
           if (name_str.compare("X-Auth-Token") == 0) {
               // This request has a token not EC2 credentials
               (store->auth_method).set_token_validation(true);
@@ -754,6 +791,7 @@ static int civetweb_callback(struct mg_connection *conn) {
               // Keystone will handle the rest
               (store->auth_method).set_token(value_str);
           }
+          
           if (
              (((name_str.compare("x-amz-metadata-directive") == 0)
              || (name_str.compare("x-jcs-metadata-directive")))
@@ -769,9 +807,10 @@ static int civetweb_callback(struct mg_connection *conn) {
                   (store->auth_method).set_copy_source(value_str);
               }
           }
+          */
       }
   }
-  dout(1) << "DSS INFO: token validation set to: " << (store->auth_method).get_token_validation() << dendl;
+  //dout(1) << "DSS INFO: token validation set to: " << (store->auth_method).get_token_validation() << dendl;
 
   RGWRequest *req = new RGWRequest(store->get_new_req_id());
   RGWMongoose client_io(conn, pe->port);
