@@ -738,8 +738,8 @@ static int civetweb_callback(struct mg_connection *conn) {
           string value_str((req_info->http_headers[i]).value);
 
           // Avoid garbage in headers
-          if ((name_str.compare("\r\n") == 0) &&
-              (value_str.compare("\r\n") == 0)) {
+          if ((name_str.compare("") == 0) &&
+              (value_str.compare("") == 0)) {
               dout(1) << "DSS INFO: Terminating headers loop" << dendl;
               break;
           }
