@@ -545,7 +545,7 @@ void end_header(struct req_state *s, RGWOp *op, const char *content_type, const 
 
   RGWObjectCtx* obj_ctx = (RGWObjectCtx*) s->obj_ctx;
   bool is_send_cors_headers =  s->cct->_conf->rgw_enable_cors_response_headers;
-  bool is_token_based_request = obj_ctx->store->auth_method.get_token_validation();
+  bool is_token_based_request = s->auth_method.get_token_validation();
   bool is_request_successful = !(s->err.is_err());
   bool is_options_request = (s->op == OP_OPTIONS);
   bool is_get_request = (s->op == OP_GET);

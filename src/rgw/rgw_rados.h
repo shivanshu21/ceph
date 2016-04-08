@@ -1277,8 +1277,8 @@ public:
                finisher(NULL),
                rest_master_conn(NULL),
                meta_mgr(NULL),
-               data_log(NULL),
-               auth_method(false, false, false) {}
+               data_log(NULL)
+               {}
 
   uint64_t get_new_req_id() {
     return max_req_id.inc();
@@ -1296,11 +1296,12 @@ public:
     zone_name = name;
   }
 
+
   /* Holds info on whether the request should be
    * validated via EC2 signature or Auth tokens.
    * Holds value when the action is COPY
    * Holds value when the token to be validated is from a presigned URL */
-
+/*
   class authorization_method {
       private:
           bool _token_validation;
@@ -1376,6 +1377,7 @@ public:
               _url_type_token(url_token) { }
           ~authorization_method() { }
   } auth_method;
+  */
 
   RGWRegion region;
   RGWZoneParams zone; /* internal zone params, e.g., rados pools */
