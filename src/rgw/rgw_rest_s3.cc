@@ -2549,9 +2549,14 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
       return 0;
   }
 
+  if (!tenant_name.empty()) {
+      dout(0) << "DSS INFO: Tenant name is empty, this will be handled later. Continuing ..." << dendl;
+      return 0;
+  }
+
   /* Check root account ID of the caller against resource name */
   string keystoneTenant = response.token.tenant.id;
-  if (!is_non_rc_action && (keystoneTenant.compare(tenant_name) != 0)) {
+  if (!is_non_rc_action && (keystoneTenant.compare(tenant_name) != 0) && !tenant_name.empty()) {
       // This case requires cross account validation.
       // Make recursive call with is_cross_account set to true
       dout(0) << "DSS INFO: Validating for cross account access" << dendl;
@@ -2610,7 +2615,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_
   // assuming error from IAM is always in this format
   // {"error": {"message": "The resource could not be found.", "code": 404, "title": "Not Found"}}
   if(tokens.size() >= 5 && !strcmp(tokens[1].c_str(), "error") && !strcmp(tokens[3].c_str(), "message")) {
-    iamerror = "IAM_ERROR: " +  tokens[5];
+    iamerror = tokens[5];
   }
   free(rxbuffer);
 
@@ -2848,7 +2853,6 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
       if (iamerror != "" ) {
         s->err.message = iamerror;
       }
-      dout(5) << "error reading user info, uid=" << auth_id << " can't authenticate" << dendl;
       return -ERR_INVALID_ACCESS_KEY;
     }
 
