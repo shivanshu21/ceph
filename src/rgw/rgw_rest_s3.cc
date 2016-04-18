@@ -2549,6 +2549,13 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
       return 0;
   }
 
+  if (tenant_name.empty()) {
+      
+      dout(0) << "DSS INFO: tenant_name is empty, returning and Continuing ..." << dendl;
+      return 0;
+	
+  }
+
   /* Check root account ID of the caller against resource name */
   string keystoneTenant = response.token.tenant.id;
   if (!is_non_rc_action && (keystoneTenant.compare(tenant_name) != 0)) {
@@ -2610,7 +2617,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_
   // assuming error from IAM is always in this format
   // {"error": {"message": "The resource could not be found.", "code": 404, "title": "Not Found"}}
   if(tokens.size() >= 5 && !strcmp(tokens[1].c_str(), "error") && !strcmp(tokens[3].c_str(), "message")) {
-    iamerror = "IAM_ERROR: " +  tokens[5];
+    iamerror = tokens[5];
   }
   free(rxbuffer);
 
