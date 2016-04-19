@@ -1102,6 +1102,7 @@ struct req_state {
 
    rgw_bucket bucket;
    string bucket_name_str;
+   string bucket_owner_id;
    rgw_obj_key object;
    string src_bucket_name;
    rgw_obj_key src_object;
