@@ -537,7 +537,6 @@ static void godown_alarm(int signum)
 static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWClientIO *client_io, OpsLogSocket *olog)
 {
   int ret = 0;
-  bool acl_main_override = false;
   client_io->init(g_ceph_context);
 
   req->log_init();
@@ -651,13 +650,10 @@ static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWC
   }
 
   req->log(s, "verifying op permissions");
-  acl_main_override = (s->auth_method).get_acl_main_override();
   ret = op->verify_permission();
   if (ret < 0) {
     if (s->system_request) {
       dout(2) << "overriding permissions due to system operation" << dendl;
-    } else if (acl_main_override && (ret != -ERR_BUCKET_ALREADY_OWNED)) { //<<<<<<
-      dout(0) << "DSS INFO: ACL decision will be overriden" << dendl;
     } else {
       abort_early(s, op, ret);
       goto done;
