@@ -572,7 +572,7 @@ void end_header(struct req_state *s, RGWOp *op, const char *content_type, const 
   }
       
 
-  if((is_send_cors_headers && is_request_successful) &&  (is_token_based_request || is_options_request)) {
+  if((is_send_cors_headers) &&  (is_token_based_request || is_options_request)) {
     string allowed_methods = s->cct->_conf->rgw_cors_allowed_methods; 
     string allowed_headers = s->cct->_conf->rgw_cors_allowed_headers; 
     dump_access_control_for_console(s, response_origin.c_str(), allowed_methods.c_str(), allowed_headers.c_str());
