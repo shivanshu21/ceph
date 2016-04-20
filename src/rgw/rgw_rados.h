@@ -2446,6 +2446,14 @@ public:
 
   RGWPutObjProcessor_Aio(RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info) : RGWPutObjProcessor(obj_ctx, bucket_info), max_chunks(RGW_MAX_PENDING_CHUNKS), obj_len(0) {}
   virtual ~RGWPutObjProcessor_Aio();
+
+  unsigned get_num_written_objs() {
+    return written_objs.size();
+  }
+
+  void clear_written_objs() {
+    written_objs.clear();
+  }
 };
 
 class RGWPutObjProcessor_Atomic : public RGWPutObjProcessor_Aio
