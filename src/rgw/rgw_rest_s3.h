@@ -348,6 +348,7 @@ public:
                        const bool&   is_copy,
                        const bool&   is_cross_account,
                        const bool&   is_url_token,
+                       const bool&   is_infini_url_token,
                        const string& copy_src,
                        const string& token,
                        const string& auth_id,
