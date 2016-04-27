@@ -2435,8 +2435,8 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
       }
   }
 
-  // For cross account call, get root account ID
-  if (is_cross_account) {
+  // For cross account call and infinite time URL, get root account ID
+  if (is_cross_account || is_infini_url_token) {
       if (tenant_name.size() > 0) {
           rootAccount = tenant_name;
       } else {
@@ -2507,6 +2507,8 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   credentials.dump_string("resource", resource_str.c_str());
   if (is_url_token) {
       credentials.dump_string("object_name", objectname.c_str());
+  } else if (is_infini_url_token) {
+      credentials.dump_string("object_id", objectname.c_str());
   } else {
       credentials.dump_string("implicit_allow", implicit_allow.c_str());
   }
@@ -2558,10 +2560,8 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   }
 
   if (tenant_name.empty()) {
-      
       dout(0) << "DSS INFO: tenant_name is empty, returning and Continuing ..." << dendl;
       return 0;
-	
   }
 
   /* Check root account ID of the caller against resource name */
