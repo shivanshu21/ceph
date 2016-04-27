@@ -1074,7 +1074,7 @@ OPTION(rgw_disable_acl_api, OPT_BOOL, true)             // disable all acl gette
 OPTION(rgw_keystone_sign_api, OPT_STR, "v3/sign-auth")    // api to validate signature based authentication requests
 OPTION(rgw_keystone_token_api, OPT_STR, "v3/token-auth")  // api to validate token based authentication requests
 OPTION(rgw_keystone_url_token_api, OPT_STR, "url-auth")   // api to validate presigned token URL based authentication requests
-OPTION(rgw_keystone_infini_url_token_api, OPT_STR, "preauth-token-auth")   // api to validate infinite time presigned token URL
+OPTION(rgw_keystone_infinite_url_token_api, OPT_STR, "preauth-token-auth")   // api to validate infinite time presigned token URL
 OPTION(dss_regional_url, OPT_STR, "https://dss.ind-west-1.staging.jiocloudservices.com") // URL to be returned in XMLNS during anonymous list all buckets calls
 
 OPTION(mutex_perf_counter, OPT_BOOL, false) // enable/disable mutex perf counter

@@ -2470,7 +2470,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
       keystone_url.append(cct->_conf->rgw_keystone_url_token_api);
       dout(0) << "DSS INFO: Validating presigned URL token" << dendl;
   } else if (is_infini_url_token) {
-      keystone_url.append(cct->_conf->rgw_keystone_infini_url_token_api);
+      keystone_url.append(cct->_conf->rgw_keystone_infinite_url_token_api);
       dout(0) << "DSS INFO: Validating infinite presigned URL token" << dendl;
   } else {
       keystone_url.append(cct->_conf->rgw_keystone_token_api);
