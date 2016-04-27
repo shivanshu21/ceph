@@ -357,7 +357,10 @@ public:
                        const string& objectname,
                        string& iamerror);
 
-  int make_iam_request(const string& keystone_url, string& iamerror);
+  int make_iam_request(const string& keystone_url,
+                             string& iamerror,
+                       const string& rootAccount,
+                       const bool& is_infini_url_token);
 };
 
 class RGW_Auth_S3 {

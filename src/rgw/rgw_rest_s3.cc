@@ -2396,7 +2396,18 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   bool is_non_rc_action = false;
   is_non_rc_action = ((localAction.compare("CreateBucket") == 0)
                    || (localAction.compare("ListAllMyBuckets") == 0)
-                   || is_url_token);
+                   || is_url_token
+                   || is_infini_url_token);
+
+  /* Infinite URLs should only be used for GET <<<<<< Needs discussion */
+  if (is_infini_url_token && !(
+        (localAction.compare("ListBucket") == 0) ||
+        (localAction.compare("GetObject") == 0)  ||
+        (localAction.compare("ListAllMyBuckets") == 0) )) {
+      dout(0) << "DSS INFO: Infinite URL only works for GET. Received local action: "
+              << localAction << dendl;
+      return -ENOTRECOVERABLE;
+  }
 
   /* Set required headers for keystone request
    * Recursive calls already have headers set */
@@ -2530,7 +2541,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   dout(0) << "DSS INFO: \n\n" << dendl;
 
   /* Make request to IAM */
-  ret = make_iam_request(keystone_url, iamerror);
+  ret = make_iam_request(keystone_url, iamerror, rootAccount, is_infini_url_token);
   if (ret < 0) {
       if (is_cross_account) {
           // If a cross account call has failed,
@@ -2588,7 +2599,10 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
 
 /* Make the CURL call to IAM
  * Call to this function requires tx_buffer to be set beforehand */
-int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_url, string& iamerror)
+int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_url,
+                                                               string& iamerror,
+                                                         const string& rootAccount,
+                                                         const bool& is_infini_url_token)
 {
   /* Clear the buffers */
   rx_buffer.clear();
@@ -2611,6 +2625,17 @@ int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_
   dout(0) << "DSS INFO: Printing RX buffer: " << bufferprinter << dendl;
   dout(0) << "DSS INFO: Printing RX headers: " << bufferheaderprinter << dendl;
 
+  /* This is a horrible hack. The scope of infinite presigned URLs needs discussion */
+  int noContentPos = bufferheaderprinter.find("204 No Content");
+  if (is_infini_url_token && !bufferprinter.size() && (noContentPos <= 0)) {
+      // This is the case when IAM has sent no body and 204 No content
+      // Fill up the root account ID we have on the resource as the user
+      // and return success
+      dout(0) << "DSS INFO: Received no content from IAM for infinite URL validation" << dendl;
+      dout(0) << "DSS INFO: This is expected IAM response. Proceeding." << dendl;
+      response.token.tenant.id = rootAccount;
+      return 0;
+  }
 
   /* Populate iamerror */
   char *rxbuffer = strdup(bufferprinter.c_str());
