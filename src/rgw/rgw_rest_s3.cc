@@ -1202,6 +1202,7 @@ int RGWPostObj_ObjStore_S3::get_policy()
                                                                       false, /* Is copy */
                                                                       false, /* Is cross account */
                                                                       (s->auth_method).get_url_type_token(),
+                                                                      (s->auth_method).get_infinite_url_type_token(),
                                                                       resource_info.getCopySrc(),
                                                                       (s->auth_method).get_token(),
                                                                       "",  /* Access key*/
@@ -1218,6 +1219,7 @@ int RGWPostObj_ObjStore_S3::get_policy()
                                                                       false, /* Is copy */
                                                                       false, /* Is cross account */
                                                                       (s->auth_method).get_url_type_token(),
+                                                                      (s->auth_method).get_infinite_url_type_token(),
                                                                        resource_info.getCopySrc(),
                                                                        "",  /* Token string */
                                                                        s3_access_key,  /* Access key */
@@ -2376,6 +2378,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
                                                          const bool&   is_copy,
                                                          const bool&   is_cross_account,
                                                          const bool&   is_url_token,
+                                                         const bool&   is_infini_url_token,
                                                          const string& copy_src,
                                                          const string& token,
                                                          const string& auth_id,
@@ -2393,7 +2396,18 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   bool is_non_rc_action = false;
   is_non_rc_action = ((localAction.compare("CreateBucket") == 0)
                    || (localAction.compare("ListAllMyBuckets") == 0)
-                   || is_url_token);
+                   || is_url_token
+                   || is_infini_url_token);
+
+  /* Infinite URLs should only be used for GET <<<<<< Needs discussion */
+  if (is_infini_url_token && !(
+        (localAction.compare("ListBucket") == 0) ||
+        (localAction.compare("GetObject") == 0)  ||
+        (localAction.compare("ListAllMyBuckets") == 0) )) {
+      dout(0) << "DSS INFO: Infinite URL only works for GET. Received local action: "
+              << localAction << dendl;
+      return -ENOTRECOVERABLE;
+  }
 
   /* Set required headers for keystone request
    * Recursive calls already have headers set */
@@ -2401,6 +2415,8 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
       if (!is_sign_auth) {
           if (is_url_token) {
               append_header("X-Url-Token", token);
+          } else if (is_infini_url_token) {
+              append_header("X-Preauth-Token", token);
           } else {
               append_header("X-Auth-Token", token);
           }
@@ -2420,7 +2436,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
       string copy_src_tenant = copy_src.substr(pos + 1);
       dout(0) << "DSS INFO: Validating for copy source" << dendl;
       ret = validate_request(localAction, copy_src_str, copy_src_tenant, is_sign_auth,
-                             true, is_cross_account, is_url_token, copy_src,
+                             true, is_cross_account, is_url_token, is_infini_url_token, copy_src,
                              token, auth_id, auth_token, auth_sign, objectname, iamerror);
       if (ret < 0) {
           return ret;
@@ -2430,8 +2446,8 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
       }
   }
 
-  // For cross account call, get root account ID
-  if (is_cross_account) {
+  // For cross account call and infinite time URL, get root account ID
+  if (is_cross_account || is_infini_url_token) {
       if (tenant_name.size() > 0) {
           rootAccount = tenant_name;
       } else {
@@ -2464,6 +2480,9 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   } else if (is_url_token) {
       keystone_url.append(cct->_conf->rgw_keystone_url_token_api);
       dout(0) << "DSS INFO: Validating presigned URL token" << dendl;
+  } else if (is_infini_url_token) {
+      keystone_url.append(cct->_conf->rgw_keystone_infinite_url_token_api);
+      dout(0) << "DSS INFO: Validating infinite presigned URL token" << dendl;
   } else {
       keystone_url.append(cct->_conf->rgw_keystone_token_api);
       if (is_cross_account) {
@@ -2499,6 +2518,8 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   credentials.dump_string("resource", resource_str.c_str());
   if (is_url_token) {
       credentials.dump_string("object_name", objectname.c_str());
+  } else if (is_infini_url_token) {
+      credentials.dump_string("object_id", objectname.c_str());
   } else {
       credentials.dump_string("implicit_allow", implicit_allow.c_str());
   }
@@ -2520,7 +2541,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   dout(0) << "DSS INFO: \n\n" << dendl;
 
   /* Make request to IAM */
-  ret = make_iam_request(keystone_url, iamerror);
+  ret = make_iam_request(keystone_url, iamerror, rootAccount, is_infini_url_token);
   if (ret < 0) {
       if (is_cross_account) {
           // If a cross account call has failed,
@@ -2550,10 +2571,8 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   }
 
   if (tenant_name.empty()) {
-      
       dout(0) << "DSS INFO: tenant_name is empty, returning and Continuing ..." << dendl;
       return 0;
-	
   }
 
   /* Check root account ID of the caller against resource name */
@@ -2564,7 +2583,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
       dout(0) << "DSS INFO: Validating for cross account access" << dendl;
       ret = validate_request(localAction, resource_name, tenant_name,
                              is_sign_auth, is_copy, true,
-                             is_url_token, copy_src, token, auth_id,
+                             is_url_token, is_infini_url_token, copy_src, token, auth_id,
                              auth_token, auth_sign, objectname, iamerror);
       if (ret < 0) {
           return ret;
@@ -2580,7 +2599,10 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
 
 /* Make the CURL call to IAM
  * Call to this function requires tx_buffer to be set beforehand */
-int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_url, string& iamerror)
+int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_url,
+                                                               string& iamerror,
+                                                         const string& rootAccount,
+                                                         const bool& is_infini_url_token)
 {
   /* Clear the buffers */
   rx_buffer.clear();
@@ -2603,6 +2625,18 @@ int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_
   dout(0) << "DSS INFO: Printing RX buffer: " << bufferprinter << dendl;
   dout(0) << "DSS INFO: Printing RX headers: " << bufferheaderprinter << dendl;
 
+  /* This is a horrible hack. The scope of infinite presigned URLs needs discussion */
+  int noContentPos = bufferheaderprinter.find("204 No Content");
+  if (is_infini_url_token && !bufferprinter.size() && (noContentPos > 0)) {
+      // This is the case when IAM has sent no body and 204 No content
+      // Fill up the root account ID we have on the resource as the user
+      // and return success
+      dout(0)  << "DSS INFO: Received no content from IAM for infinite URL validation" << dendl;
+      dout(0)  << "DSS INFO: This is expected IAM response. Proceeding." << dendl;
+      dout(10) << "DSS INFO: nocontentpos is " << noContentPos << dendl;
+      response.token.tenant.id = rootAccount;
+      return 0;
+  }
 
   /* Populate iamerror */
   char *rxbuffer = strdup(bufferprinter.c_str());
@@ -2675,6 +2709,17 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
           (s->auth_method).set_token_validation(true);
           (s->auth_method).set_token(url_token);
           (s->auth_method).set_url_type_token(true);
+      }
+  }
+
+  // check for infinite time token in presigned URL requests
+  if(!isTokenBasedAuth && store->ctx()->_conf->rgw_enable_infinite_token_based_presigned_url) {
+      string url_token = s->info.args.get("X-Preauth-Token");
+      if(url_token.size() > 0) {
+          isTokenBasedAuth = true;
+          (s->auth_method).set_token_validation(true);
+          (s->auth_method).set_token(url_token);
+          (s->auth_method).set_infinite_url_type_token(true);
       }
   }
 
@@ -2778,6 +2823,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 false, /* Is copy */
                                                                 false, /* Is cross account */
                                                                 (s->auth_method).get_url_type_token(),
+                                                                (s->auth_method).get_infinite_url_type_token(),
                                                                 resource_info.getCopySrc(),
                                                                 (s->auth_method).get_token(),
                                                                 "",  /* Access key*/
@@ -2794,6 +2840,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 false, /* Is copy */
                                                                 false, /* Is cross account */
                                                                 (s->auth_method).get_url_type_token(),
+                                                                (s->auth_method).get_infinite_url_type_token(),
                                                                 resource_info.getCopySrc(),
                                                                 "",  /* Token string */
                                                                 auth_id,  /* Access key */

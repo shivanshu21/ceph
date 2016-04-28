@@ -348,6 +348,7 @@ public:
                        const bool&   is_copy,
                        const bool&   is_cross_account,
                        const bool&   is_url_token,
+                       const bool&   is_infini_url_token,
                        const string& copy_src,
                        const string& token,
                        const string& auth_id,
@@ -356,7 +357,10 @@ public:
                        const string& objectname,
                        string& iamerror);
 
-  int make_iam_request(const string& keystone_url, string& iamerror);
+  int make_iam_request(const string& keystone_url,
+                             string& iamerror,
+                       const string& rootAccount,
+                       const bool& is_infini_url_token);
 };
 
 class RGW_Auth_S3 {

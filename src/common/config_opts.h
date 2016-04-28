@@ -1067,11 +1067,14 @@ OPTION(rgw_cors_allowed_headers, OPT_STR, "X-Auth-Token, Content-Disposition, Co
 OPTION(rgw_cors_content_disposition_header, OPT_STR, "Content-Disposition") // cors content disposition HEADER
 OPTION(rgw_cors_content_disposition_header_value, OPT_STR, "attachment") // cors content disposition HEADER value
 OPTION(rgw_enable_token_based_presigned_url, OPT_BOOL, true) // enable token based presigned url
+OPTION(rgw_enable_infinite_token_based_presigned_url, OPT_BOOL, true) // enable infinite token based presigned url
+
 
 OPTION(rgw_disable_acl_api, OPT_BOOL, true)             // disable all acl getters and setters
 OPTION(rgw_keystone_sign_api, OPT_STR, "v3/sign-auth")    // api to validate signature based authentication requests
 OPTION(rgw_keystone_token_api, OPT_STR, "v3/token-auth")  // api to validate token based authentication requests
 OPTION(rgw_keystone_url_token_api, OPT_STR, "url-auth")   // api to validate presigned token URL based authentication requests
+OPTION(rgw_keystone_infinite_url_token_api, OPT_STR, "preauth-token-auth")   // api to validate infinite time presigned token URL
 OPTION(dss_regional_url, OPT_STR, "https://dss.ind-west-1.staging.jiocloudservices.com") // URL to be returned in XMLNS during anonymous list all buckets calls
 
 OPTION(mutex_perf_counter, OPT_BOOL, false) // enable/disable mutex perf counter

@@ -1003,6 +1003,7 @@ class authorization_method {
     bool _token_validation;
     bool _copy_action;
     bool _url_type_token;
+    bool _infinite_url_type_token;
     bool _acl_main_override;
     bool _acl_copy_override;
     string _token;
@@ -1049,6 +1050,14 @@ class authorization_method {
     {
       _url_type_token = val;
     }
+    inline bool get_infinite_url_type_token()
+    {
+      return _infinite_url_type_token;
+    }
+    inline void set_infinite_url_type_token(bool val)
+    {
+      _infinite_url_type_token = val;
+    }
     inline bool get_acl_main_override()
     {
       return _acl_main_override;
@@ -1067,10 +1076,12 @@ class authorization_method {
     }
 
 
-    authorization_method(bool method, bool action, bool url_token, bool acl_main, bool acl_copy) :
+    authorization_method(bool method, bool action, bool url_token,
+                         bool infini_token, bool acl_main, bool acl_copy) :
       _token_validation(method),
       _copy_action(action),
       _url_type_token(url_token),
+      _infinite_url_type_token(infini_token),
       _acl_main_override(acl_main),
       _acl_copy_override(acl_copy) { }
     ~authorization_method() { }
