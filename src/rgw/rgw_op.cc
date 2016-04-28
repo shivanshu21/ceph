@@ -1834,6 +1834,19 @@ void RGWPutObj::execute()
       /* restore original data */
       data.swap(orig_data);
 
+      /* If this was the first stripe of a part of a multipart upload and it failed due to -EEXIST, this means
+       * that this part is being retried. Deleting the existing stripe may result in data loss if the current
+       * attempt to upload this part fails. This stripe should not be deleted here, GC would take care of it.
+       */
+     
+      if((ofs == 0) && multipart && ret == -EEXIST) {
+        RGWPutObjProcessor_Atomic * processor_atomic = static_cast<RGWPutObjProcessor_Atomic *>(processor);
+        unsigned num_written_objs = processor_atomic->get_num_written_objs();
+        if(num_written_objs == 1) {
+          processor_atomic->clear_written_objs();
+        }
+      }
+
       /* restart processing with different oid suffix */
 
       dispose_processor(processor);
