@@ -2627,12 +2627,13 @@ int RGW_Auth_S3_Keystone_ValidateToken::make_iam_request(const string& keystone_
 
   /* This is a horrible hack. The scope of infinite presigned URLs needs discussion */
   int noContentPos = bufferheaderprinter.find("204 No Content");
-  if (is_infini_url_token && !bufferprinter.size() && (noContentPos <= 0)) {
+  if (is_infini_url_token && !bufferprinter.size() && (noContentPos > 0)) {
       // This is the case when IAM has sent no body and 204 No content
       // Fill up the root account ID we have on the resource as the user
       // and return success
-      dout(0) << "DSS INFO: Received no content from IAM for infinite URL validation" << dendl;
-      dout(0) << "DSS INFO: This is expected IAM response. Proceeding." << dendl;
+      dout(0)  << "DSS INFO: Received no content from IAM for infinite URL validation" << dendl;
+      dout(0)  << "DSS INFO: This is expected IAM response. Proceeding." << dendl;
+      dout(10) << "DSS INFO: nocontentpos is " << noContentPos << dendl;
       response.token.tenant.id = rootAccount;
       return 0;
   }
