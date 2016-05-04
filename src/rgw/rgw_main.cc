@@ -555,7 +555,7 @@ static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWC
 
   s->req_id = store->unique_id(req->id);
   s->trans_id = store->unique_trans_id(req->id);
-  dout(1) << "====== starting new request trans="  << s->trans_id.c_str() << " =====" << dendl;
+  dout(1) << "DSS API LOGGING: ====== starting new request trans="  << s->trans_id.c_str() << " =====" << dendl;
   //req->log_format(s, "initializing for trans_id = %s", s->trans_id.c_str());
 
   /* Logic for checking whether the request is token based or signature based */
@@ -691,9 +691,8 @@ done:
   if (handler)
     handler->put_op(op);
   rest->put_handler(handler);
-  dout(1) << "API logging: " << s->trans_id.c_str() << "        " << http_ret <<dendl;
 
-  dout(1) << "====== req done trans=" << s->trans_id.c_str() << " http_status=" << http_ret << " ======" << dendl;
+  dout(1) << "DSS API LOGGING: ====== req done trans=" << s->trans_id.c_str() << " http_status=" << http_ret << " ======" << dendl;
 
   return (ret < 0 ? ret : s->err.ret);
 }
