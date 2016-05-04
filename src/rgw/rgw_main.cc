@@ -691,6 +691,7 @@ done:
   if (handler)
     handler->put_op(op);
   rest->put_handler(handler);
+  dout(1) << "API logging: " << s->trans_id.c_str() << "        " << http_ret <<dendl;
 
   dout(1) << "====== req done trans=" << s->trans_id.c_str() << " http_status=" << http_ret << " ======" << dendl;
 

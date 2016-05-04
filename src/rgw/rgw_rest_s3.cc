@@ -1193,6 +1193,7 @@ int RGWPostObj_ObjStore_S3::get_policy()
             dout(0) << "DSS INFO: Sending Action to validate: " << resource_info.getAction() << dendl;
             dout(0) << "DSS INFO: Sending Resource to validate: " << resource_info.getResourceName() << dendl;
             dout(0) << "DSS INFO: Sending Tenant to validate: " << resource_info.getTenantName() << dendl;
+	    dout(1) << "API logging: "<< resource_info.getAction() <<"        "<< resource_info.getResourceName() << "        " << resource_info.getTenantName() << dendl;
 
             if (isTokenBasedAuth) {
                 keystone_result = keystone_validator.validate_request(resource_info.getAction(),
@@ -2769,6 +2770,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
       dout(0) << "DSS INFO: Sending Resource to validate: " << resource_info.getResourceName() << dendl;
       dout(0) << "DSS INFO: Sending Tenant to validate: " << resource_info.getTenantName() << dendl;
       dout(0) << "DSS INFO: Sending Object to validate: " << resource_object_name << dendl;
+      dout(1) << "API logging: "<< resource_info.getAction() <<"        "<< resource_info.getResourceName() << "        " << resource_info.getTenantName() << "        " << resource_object_name << dendl;
 
       if (isTokenBasedAuth) {
           keystone_result = keystone_validator.validate_request(resource_info.getAction(),
