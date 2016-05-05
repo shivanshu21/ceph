@@ -130,6 +130,12 @@ struct RGWRequest
     utime_t t = ceph_clock_now(g_ceph_context) - ts;
     dout(2) << "req " << id << ":" << t << ":" << s->dialect << ":" << req_str << ":" << (op ? op->name() : "") << ":" << msg << dendl;
   }
+  
+  utime_t time_elapsed() {
+    utime_t elapsed = ceph_clock_now(g_ceph_context) - ts;
+    return elapsed;
+  }
+
 };
 
 class RGWFrontendConfig {
@@ -687,8 +693,9 @@ done:
   if (handler)
     handler->put_op(op);
   rest->put_handler(handler);
+  utime_t req_serve_time = req->time_elapsed();
 
-  dout(1) << "DSS API LOGGING: ====== req done trans=" << s->trans_id.c_str() << " http_status=" << http_ret << " ======" << dendl;
+  dout(1) << "DSS API LOGGING: ====== req done trans=" << s->trans_id.c_str() << " http_status=" << http_ret << " req_serving_time= " << req_serve_time << " ======" << dendl;
 
   return (ret < 0 ? ret : s->err.ret);
 }
