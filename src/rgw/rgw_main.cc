@@ -560,7 +560,8 @@ static int process_request(RGWRados *store, RGWREST *rest, RGWRequest *req, RGWC
 
   s->req_id = store->unique_id(req->id);
   s->trans_id = store->unique_trans_id(req->id);
-  dout(1) << "DSS API LOGGING: ====== starting new request trans="  << s->trans_id.c_str() << " =====" << dendl;
+  dout(1) << "DSS API LOGGING: Request-Id: "<< s->req_id.c_str() << dendl;
+  dout(1) << "DSS INFO: Transaction Id: "  << s->trans_id.c_str() << dendl;
   //req->log_format(s, "initializing for trans_id = %s", s->trans_id.c_str());
 
   /* Logic for checking whether the request is token based or signature based */
@@ -694,7 +695,6 @@ done:
     handler->put_op(op);
   rest->put_handler(handler);
   utime_t req_serve_time = req->time_elapsed();
-
   dout(1) << "DSS API LOGGING: ====== req done trans=" << s->trans_id.c_str() << " http_status=" << http_ret << " req_serving_time= " << req_serve_time << " ======" << dendl;
 
   return (ret < 0 ? ret : s->err.ret);
@@ -769,6 +769,7 @@ static int civetweb_callback(struct mg_connection *conn) {
    * method required is EC2 signature or tokens.
    * While there can be at most 100 header fields in a HTTP request,
    * http_headers is an array of size 64 elements inside civetweb */
+  dout(1) << "DSS API LOGGING: ====== starting new request ======" << dendl;
 
   dout(1) << "DSS INFO: Num headers is: " << req_info->num_headers << dendl;
   for (int i = 0; i < req_info->num_headers; i++) {
@@ -783,8 +784,7 @@ static int civetweb_callback(struct mg_connection *conn) {
               break;
           }
 
-          dout(1) << "DSS INFO: CIVETWEB HEADER NAME: " << name_str << dendl;
-          dout(1) << "DSS INFO: CIVETWEB HEADER VALUE: " << value_str << dendl;
+          dout(1) << "DSS API LOGGING: " << name_str << " : "<< value_str << dendl;
 
         /*
           if (name_str.compare("X-Auth-Token") == 0) {
