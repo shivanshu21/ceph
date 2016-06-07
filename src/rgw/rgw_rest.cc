@@ -496,10 +496,10 @@ void dump_access_control(req_state *s, RGWOp *op)
 
 
 /* This method dumps the CORS headers for web console */
-void dump_access_control_for_console(req_state *s, const char* origin, const char* method, const char* headers)
+void dump_access_control_for_console(req_state *s, const char* origin, const char* method, const char* headers, const char* exposed_headers)
 {
   unsigned max_age = CORS_MAX_AGE_INVALID;
-  dump_access_control(s, origin, method, headers, NULL, max_age);
+  dump_access_control(s, origin, method, headers, exposed_headers, max_age);
 }
 
 void dump_start(struct req_state *s)
@@ -549,6 +549,7 @@ void end_header(struct req_state *s, RGWOp *op, const char *content_type, const 
   bool is_request_successful = !(s->err.is_err());
   bool is_options_request = (s->op == OP_OPTIONS);
   bool is_get_request = (s->op == OP_GET);
+  bool is_put_request = (s->op == OP_PUT);
   char *allowed_origins = new char[s->cct->_conf->rgw_cors_allowed_origin.length() + 1];
   strcpy(allowed_origins, s->cct->_conf->rgw_cors_allowed_origin.c_str());
   const char *orig = s->info.env->get("HTTP_ORIGIN");
@@ -575,7 +576,15 @@ void end_header(struct req_state *s, RGWOp *op, const char *content_type, const 
   if((is_send_cors_headers) &&  (is_token_based_request || is_options_request)) {
     string allowed_methods = s->cct->_conf->rgw_cors_allowed_methods; 
     string allowed_headers = s->cct->_conf->rgw_cors_allowed_headers; 
-    dump_access_control_for_console(s, response_origin.c_str(), allowed_methods.c_str(), allowed_headers.c_str());
+    if(is_put_request){
+      bool is_multipart = (s->info.args.exists("uploadId"));
+      if (is_multipart){
+        string exposed_headers = s->cct->_conf->rgw_cors_exposed_headers;
+        dump_access_control_for_console(s, response_origin.c_str(), allowed_methods.c_str(), allowed_headers.c_str(), exposed_headers.c_str());
+      } else {
+        dump_access_control_for_console(s, response_origin.c_str(), allowed_methods.c_str(), allowed_headers.c_str(), NULL);
+      }
+    }
     if(is_get_request) {
         string content_disposition_header = s->cct->_conf->rgw_cors_content_disposition_header;
         string content_disposition_header_value = s->cct->_conf->rgw_cors_content_disposition_header_value;
