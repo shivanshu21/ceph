@@ -572,18 +572,15 @@ void end_header(struct req_state *s, RGWOp *op, const char *content_type, const 
     }
   }
       
-
   if((is_send_cors_headers) &&  (is_token_based_request || is_options_request)) {
     string allowed_methods = s->cct->_conf->rgw_cors_allowed_methods; 
     string allowed_headers = s->cct->_conf->rgw_cors_allowed_headers; 
-    if(is_put_request){
-      bool is_multipart = (s->info.args.exists("uploadId"));
-      if (is_multipart){
-        string exposed_headers = s->cct->_conf->rgw_cors_exposed_headers;
-        dump_access_control_for_console(s, response_origin.c_str(), allowed_methods.c_str(), allowed_headers.c_str(), exposed_headers.c_str());
-      } else {
-        dump_access_control_for_console(s, response_origin.c_str(), allowed_methods.c_str(), allowed_headers.c_str(), NULL);
-      }
+    bool is_multipart = (s->info.args.exists("uploadId"));
+    if((is_options_request || is_put_request) && is_multipart){
+      string exposed_headers = s->cct->_conf->rgw_cors_exposed_headers;
+      dump_access_control_for_console(s, response_origin.c_str(), allowed_methods.c_str(), allowed_headers.c_str(), exposed_headers.c_str());
+    } else {
+      dump_access_control_for_console(s, response_origin.c_str(), allowed_methods.c_str(), allowed_headers.c_str(), NULL);
     }
     if(is_get_request) {
         string content_disposition_header = s->cct->_conf->rgw_cors_content_disposition_header;
