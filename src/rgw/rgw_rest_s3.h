@@ -187,6 +187,16 @@ public:
   void send_response();
 };
 
+class RGWRenameObj_ObjStore_S3 : public RGWRenameObj_ObjStore {
+    //<<<<
+    public:
+        void send_response() {
+            int y;
+        }
+        RGWRenameObj_ObjStore_S3() {}
+        ~RGWRenameObj_ObjStore_S3() {}
+};
+
 class RGWGetACLs_ObjStore_S3 : public RGWGetACLs_ObjStore {
 public:
   RGWGetACLs_ObjStore_S3() {}
@@ -445,6 +455,9 @@ protected:
   }
   bool is_obj_update_op() {
     return is_acl_op();
+  }
+  bool is_rename_op() {
+      return s->info.args.exists("newname");
   }
   RGWOp *get_obj_op(bool get_data);
 

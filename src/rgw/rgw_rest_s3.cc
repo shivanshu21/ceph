@@ -1238,7 +1238,7 @@ int RGWPostObj_ObjStore_S3::get_policy()
                 return -EACCES;
             }
             user_info.user_id = keystone_validator.response.token.tenant.id;
-            user_info.display_name = keystone_validator.response.token.tenant.id; //<<<<<< DSS needs tenant.name
+            user_info.display_name = keystone_validator.response.token.tenant.id;
             /* try to store user if it not already exists */
             if (rgw_get_user_info_by_uid(store, keystone_validator.response.token.tenant.id, user_info) < 0) {
                 int ret = rgw_store_user_info(store, user_info, NULL, NULL, 0, true);
@@ -2120,6 +2120,12 @@ RGWOp *RGWHandler_ObjStore_Obj_S3::op_put()
   if (is_acl_op()) {
     return new RGWPutACLs_ObjStore_S3;
   }
+  if (is_rename_op()) {
+    //<<<<<<<<
+    return new RGWRenameObj_ObjStore_S3;
+    //dout(0) << "-------------- The value of new name is " << s->info.args.get("newname") << dendl;
+    //dout(0) << "=========== I am getting rename op =========" << dendl;
+  }
   if (!s->copy_source)
     return new RGWPutObj_ObjStore_S3;
   else
@@ -2397,7 +2403,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
                    || is_url_token
                    || is_infini_url_token);
 
-  /* Infinite URLs should only be used for GET <<<<<< Needs discussion */
+  /* Infinite URLs should only be used for GET */
   if (is_infini_url_token && !(
         (localAction.compare("ListBucket") == 0) ||
         (localAction.compare("GetObject") == 0)  ||

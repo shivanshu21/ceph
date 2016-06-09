@@ -188,6 +188,12 @@ public:
   ~RGWCopyObj_ObjStore() {}
 };
 
+class RGWRenameObj_ObjStore : public RGWRenameObj {
+public:
+  RGWRenameObj_ObjStore() {}
+  ~RGWRenameObj_ObjStore() {}
+};
+
 class RGWGetACLs_ObjStore : public RGWGetACLs {
 public:
   RGWGetACLs_ObjStore() {}
