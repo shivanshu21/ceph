@@ -188,13 +188,11 @@ public:
 };
 
 class RGWRenameObj_ObjStore_S3 : public RGWRenameObj_ObjStore {
-    //<<<<
     public:
-        void send_response() {
-            int y;
-        }
         RGWRenameObj_ObjStore_S3() {}
         ~RGWRenameObj_ObjStore_S3() {}
+
+        void send_response();
 };
 
 class RGWGetACLs_ObjStore_S3 : public RGWGetACLs_ObjStore {

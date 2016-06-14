@@ -566,14 +566,14 @@ public:
 };
 
 class RGWRenameObj : public RGWOp {
-    //<<<<
     public:
-      RGWRenameObj() {}
+      int ret;
+      RGWRenameObj() : ret(0) {}
       ~RGWRenameObj() {}
-      int verify_permission() { return 0; }
-      void pre_exec() { int x; }
-      void execute() { int x; }
-      const string name() { return "Rename_obj"; }
+      int verify_permission();
+      void pre_exec();
+      void execute();
+      virtual const string name() { return "Rename_obj"; }
 };
 
 class RGWCopyObj : public RGWOp {

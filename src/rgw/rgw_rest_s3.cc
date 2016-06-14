@@ -1619,6 +1619,16 @@ int RGWPutACLs_ObjStore_S3::get_policy_from_state(RGWRados *store, struct req_st
   return 0;
 }
 
+void RGWRenameObj_ObjStore_S3::send_response()
+{
+  if (ret)
+    set_req_state_err(s, ret);
+  dump_errno(s);
+  end_header(s, this, "application/xml");
+  dump_start(s);
+  return;
+}
+
 void RGWPutACLs_ObjStore_S3::send_response()
 {
   if (ret)
@@ -2121,7 +2131,6 @@ RGWOp *RGWHandler_ObjStore_Obj_S3::op_put()
     return new RGWPutACLs_ObjStore_S3;
   }
   if (is_rename_op()) {
-    //<<<<<<<<
     return new RGWRenameObj_ObjStore_S3;
     //dout(0) << "-------------- The value of new name is " << s->info.args.get("newname") << dendl;
     //dout(0) << "=========== I am getting rename op =========" << dendl;

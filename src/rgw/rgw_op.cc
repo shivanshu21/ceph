@@ -3514,3 +3514,24 @@ void RGWHandler::put_op(RGWOp *op)
   delete op;
 }
 
+
+
+/* Object Rename operation */
+
+int RGWRenameObj::verify_permission()
+{
+    // This function used to check ACLs in legacy code
+    // DSS does not require this.
+    return 0;
+}
+
+void RGWRenameObj::pre_exec()
+{
+  rgw_bucket_object_pre_exec(s);
+}
+
+void RGWRenameObj::execute()
+{
+    ret = 0;
+    return;
+}
