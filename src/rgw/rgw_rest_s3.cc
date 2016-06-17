@@ -1468,6 +1468,15 @@ done:
   rgw_flush_formatter_and_reset(s, s->formatter);
 }
 
+void RGWDeleteObj_ObjStore_S3::dss_set_req_state(req_state* orig_s)
+{
+    s = orig_s;
+}
+
+void RGWDeleteObj_ObjStore_S3::dss_set_store(RGWRados* orig_store)
+{
+    store = orig_store;
+}
 
 void RGWDeleteObj_ObjStore_S3::send_response()
 {
@@ -1500,6 +1509,16 @@ int RGWCopyObj_ObjStore_S3::init_dest_policy()
   dest_policy = s3policy;
 
   return 0;
+}
+
+void RGWCopyObj_ObjStore_S3::dss_set_req_state(req_state* orig_s)
+{
+    s = orig_s;
+}
+
+void RGWCopyObj_ObjStore_S3::dss_set_store(RGWRados* orig_store)
+{
+    store = orig_store;
 }
 
 int RGWCopyObj_ObjStore_S3::get_params()
@@ -2132,8 +2151,6 @@ RGWOp *RGWHandler_ObjStore_Obj_S3::op_put()
   }
   if (is_rename_op()) {
     return new RGWRenameObj_ObjStore_S3;
-    //dout(0) << "-------------- The value of new name is " << s->info.args.get("newname") << dendl;
-    //dout(0) << "=========== I am getting rename op =========" << dendl;
   }
   if (!s->copy_source)
     return new RGWPutObj_ObjStore_S3;
@@ -2823,7 +2840,11 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
       if (s != NULL) {
           resource_object_name = s->object.name;
       }
-      dout(1) << "DSS API LOGGING: Action="<< resource_info.getAction() <<"        Resource="<< resource_info.getResourceName() << "        Tenant=" << resource_info.getTenantName() << "        Object=" << resource_object_name << dendl;
+      dout(1) << "DSS API LOGGING: Action="
+              << resource_info.getAction()
+              << "        Resource="<< resource_info.getResourceName()
+              << "        Tenant=" << resource_info.getTenantName()
+              << "        Object=" << resource_object_name << dendl;
 
       if (isTokenBasedAuth) {
           keystone_result = keystone_validator.validate_request(resource_info.getAction(),

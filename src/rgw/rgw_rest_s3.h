@@ -173,6 +173,8 @@ public:
   ~RGWDeleteObj_ObjStore_S3() {}
 
   void send_response();
+  void dss_set_req_state(req_state* orig_s);
+  void dss_set_store(RGWRados* orig_store);
 };
 
 class RGWCopyObj_ObjStore_S3 : public RGWCopyObj_ObjStore {
@@ -185,6 +187,8 @@ public:
   int get_params();
   void send_partial_response(off_t ofs);
   void send_response();
+  void dss_set_req_state(req_state* orig_s);
+  void dss_set_store(RGWRados* orig_store);
 };
 
 class RGWRenameObj_ObjStore_S3 : public RGWRenameObj_ObjStore {

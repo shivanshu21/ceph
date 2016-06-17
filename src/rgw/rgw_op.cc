@@ -24,7 +24,7 @@
 #include "rgw_multi_del.h"
 #include "rgw_cors.h"
 #include "rgw_cors_s3.h"
-
+#include "rgw_rest_s3.h"
 #include "rgw_client_io.h"
 
 #define dout_subsys ceph_subsys_rgw
@@ -3533,5 +3533,38 @@ void RGWRenameObj::pre_exec()
 void RGWRenameObj::execute()
 {
     ret = 0;
+    string orig_object = (s->object).name;
+    (s->object).name = s->info.args.get("newname");
+    string copysource = s->bucket_name_str;
+    copysource.append("/");
+    copysource.append(orig_object);
+    ldout(s->cct, 0) << "DSS INFO: Converting to copy request. s->object: "
+                     << (s->object).name << ". Copy source: " << copysource << dendl;
+    s->info.env->set("HTTP_X_JCS_COPY_SOURCE", copysource.c_str());
+    s->info.env->set("HTTP_X_JCS_METADATA_DIRECTIVE", "COPY");
+
+    RGWCopyObj_ObjStore_S3* copy_op = new RGWCopyObj_ObjStore_S3;
+    copy_op->dss_set_req_state(s);
+    copy_op->dss_set_store(store);
+    copy_op->init_processing();
+    s->system_request = true;
+    copy_op->pre_exec();
+    copy_op->execute();
+    copy_op->complete();
+    ldout(s->cct, 0) << "DSS INFO: Rename op copy done" << dendl;
+
+/*    s->system_request = false;
+    (s->object).name = orig_object;
+    ldout(s->cct, 0) << "DSS INFO: Rearraging things to continue with delete. s->object: "
+                     << (s->object).name << dendl;
+    RGWDeleteObj_ObjStore_S3* del_op = new RGWDeleteObj_ObjStore_S3;
+    del_op->dss_set_req_state(s);
+    del_op->dss_set_store(store);
+    del_op->init_processing();
+    s->system_request = true;
+    del_op->pre_exec();
+    del_op->execute();
+    ldout(s->cct, 0) << "DSS INFO: Rename op delete performed"  << dendl;*/
+    s->system_request = false;
     return;
 }
