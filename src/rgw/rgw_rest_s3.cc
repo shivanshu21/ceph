@@ -2129,7 +2129,7 @@ RGWOp *RGWHandler_ObjStore_Obj_S3::op_put()
   if (is_acl_op()) {
     return new RGWPutACLs_ObjStore_S3;
   }
-  if (is_rename_op()) {
+  if (is_rename_op() && store->ctx()->_conf->rgw_enable_rename_op) {
     return new RGWRenameObj_ObjStore_S3;
   }
   if (!s->copy_source)
@@ -2740,6 +2740,17 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
       return -EPERM;
   }
 
+  // Block rename op for illegal cases
+  if ((store->ctx()->_conf->rgw_enable_rename_op) && (s->info.args.exists("newname"))) {
+      if (s->op == OP_PUT) {
+          if ((s->object).name.empty()) {
+              return -ERR_BAD_RENAME_REQ;
+          }
+      } else {
+          return -ERR_BAD_RENAME_REQ;
+      }
+  }
+
   /* neither keystone and rados enabled; warn and exit! */
   if (!store->ctx()->_conf->rgw_s3_auth_use_rados
       && !store->ctx()->_conf->rgw_s3_auth_use_keystone) {
@@ -2769,10 +2780,9 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
               qsr = true;
           } else {
               /* anonymous access */
-              //<<<<<< You will hit here for sign based req
-              //<<<<<< Add changes for anonymous access. Call a func from here.
-              init_anon_user(s);
-              return 0;
+              return -EPERM;
+              //init_anon_user(s);
+              //return 0;
           }
       } else {
           // strncmp returns 0 on match. If even one of AWS or JCS match, dont return -EINVAL.
@@ -2842,7 +2852,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
                                                                 "",  /* Received signature */
                                                                 resource_object_name,
                                                                 iamerror);
-        
+
       } else {
           keystone_result = keystone_validator.validate_request(resource_info.getAction(),
                                                                 resource_info.getResourceName(),

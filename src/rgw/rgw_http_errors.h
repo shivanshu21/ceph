@@ -45,6 +45,7 @@ const static struct rgw_http_errors RGW_HTTP_ERRORS[] = {
     { ERR_USER_SUSPENDED, 403, "UserSuspended" },
     { ERR_REQUEST_TIME_SKEWED, 403, "RequestTimeTooSkewed" ,"The difference between the request time and the server's time is too large."},
     { ERR_QUOTA_EXCEEDED, 403, "QuotaExceeded" },
+    { ERR_BAD_RENAME_REQ, 403, "Rename request must have object name, new object name and the HTTP method should be PUT." },
     { ENOENT, 404, "NoSuchKey", "Resource not found."},
     { ERR_NO_SUCH_BUCKET, 404, "NoSuchBucket", "Resource not found"},
     { ERR_NO_SUCH_UPLOAD, 404, "NoSuchUpload", "The specified multipart upload does not exist. The upload ID might be invalid, or the multipart upload might have been aborted or completed."},
