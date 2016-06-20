@@ -1468,16 +1468,6 @@ done:
   rgw_flush_formatter_and_reset(s, s->formatter);
 }
 
-void RGWDeleteObj_ObjStore_S3::dss_set_req_state(req_state* orig_s)
-{
-    s = orig_s;
-}
-
-void RGWDeleteObj_ObjStore_S3::dss_set_store(RGWRados* orig_store)
-{
-    store = orig_store;
-}
-
 void RGWDeleteObj_ObjStore_S3::send_response()
 {
   int r = ret;
@@ -1509,16 +1499,6 @@ int RGWCopyObj_ObjStore_S3::init_dest_policy()
   dest_policy = s3policy;
 
   return 0;
-}
-
-void RGWCopyObj_ObjStore_S3::dss_set_req_state(req_state* orig_s)
-{
-    s = orig_s;
-}
-
-void RGWCopyObj_ObjStore_S3::dss_set_store(RGWRados* orig_store)
-{
-    store = orig_store;
 }
 
 int RGWCopyObj_ObjStore_S3::get_params()

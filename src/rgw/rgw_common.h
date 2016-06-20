@@ -945,6 +945,11 @@ struct rgw_obj_key {
     k->instance = instance;
   }
 
+  void dss_duplicate(rgw_obj_key* k) {
+    name = k->name;
+    instance = k->instance;
+  }
+
   void set(const string& n) {
     name = n;
     instance.clear();

@@ -3533,38 +3533,60 @@ void RGWRenameObj::pre_exec()
 void RGWRenameObj::execute()
 {
     ret = 0;
-    string orig_object = (s->object).name;
+    rgw_obj_key orig_object;
+    orig_object.dss_duplicate(&(s->object));
     (s->object).name = s->info.args.get("newname");
     string copysource = s->bucket_name_str;
     copysource.append("/");
-    copysource.append(orig_object);
+    copysource.append(orig_object.name);
     ldout(s->cct, 0) << "DSS INFO: Converting to copy request. s->object: "
                      << (s->object).name << ". Copy source: " << copysource << dendl;
     s->info.env->set("HTTP_X_JCS_COPY_SOURCE", copysource.c_str());
     s->info.env->set("HTTP_X_JCS_METADATA_DIRECTIVE", "COPY");
-
+    s->copy_source = s->info.env->get("HTTP_X_JCS_COPY_SOURCE");
     RGWCopyObj_ObjStore_S3* copy_op = new RGWCopyObj_ObjStore_S3;
-    copy_op->dss_set_req_state(s);
-    copy_op->dss_set_store(store);
+    if (s->copy_source) {
+      ret = RGWCopyObj::parse_copy_location(s->copy_source, s->src_bucket_name, s->src_object);
+      if (!ret) {
+        ldout(s->cct, 0) << "DSS INFO: Rename op failed to parse copy location" << dendl;
+        return;
+      }
+      /*ret = validate_bucket_name(s->src_bucket_name, bucket_name_strictness_value);
+      if (ret) {
+        ldout(s->cct, 0) << "DSS INFO: Rename op bucket name not valid" << dendl;
+        return;
+      }
+      ret = validate_object_name(s->src_object.name);
+      if (ret) {
+        ldout(s->cct, 0) << "DSS INFO: Rename op object name not valid" << dendl;
+        return;
+      }*/
+    }
+
+    copy_op->init(store, s, dialect_handler);
+    copy_op->verify_op_mask();
+    copy_op->verify_permission();
+    copy_op->verify_params();
     copy_op->init_processing();
     s->system_request = true;
     copy_op->pre_exec();
     copy_op->execute();
-    copy_op->complete();
     ldout(s->cct, 0) << "DSS INFO: Rename op copy done" << dendl;
 
-/*    s->system_request = false;
-    (s->object).name = orig_object;
+    s->system_request = false;
+    (s->object).dss_duplicate(&orig_object);
     ldout(s->cct, 0) << "DSS INFO: Rearraging things to continue with delete. s->object: "
                      << (s->object).name << dendl;
     RGWDeleteObj_ObjStore_S3* del_op = new RGWDeleteObj_ObjStore_S3;
-    del_op->dss_set_req_state(s);
-    del_op->dss_set_store(store);
+    del_op->init(store, s, dialect_handler);
+    del_op->verify_permission();
+    del_op->verify_params();
+    del_op->verify_op_mask();
     del_op->init_processing();
     s->system_request = true;
     del_op->pre_exec();
     del_op->execute();
-    ldout(s->cct, 0) << "DSS INFO: Rename op delete performed"  << dendl;*/
+    ldout(s->cct, 0) << "DSS INFO: Rename op delete performed"  << dendl;
     s->system_request = false;
     return;
 }
