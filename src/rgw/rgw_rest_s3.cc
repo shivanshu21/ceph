@@ -1620,12 +1620,12 @@ int RGWPutACLs_ObjStore_S3::get_policy_from_state(RGWRados *store, struct req_st
 
 void RGWRenameObj_ObjStore_S3::send_response()
 {
+  ret = 0;
   if (ret)
     set_req_state_err(s, ret);
   dump_errno(s);
   end_header(s, this, "application/xml");
   dump_start(s);
-  return;
 }
 
 void RGWPutACLs_ObjStore_S3::send_response()
