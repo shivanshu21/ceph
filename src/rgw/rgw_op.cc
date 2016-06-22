@@ -3533,12 +3533,13 @@ void RGWRenameObj::pre_exec()
 void RGWRenameObj::execute()
 {
     ret = 0;
-    rgw_obj_key orig_object;
-    orig_object.dss_duplicate(&(s->object));
+    s->err.ret = 0;
+    rgw_obj_key buffer_object;
+    buffer_object.dss_duplicate(&(s->object));
     (s->object).name = s->info.args.get("newname");
     string copysource = s->bucket_name_str;
     copysource.append("/");
-    copysource.append(orig_object.name);
+    copysource.append(buffer_object.name);
     ldout(s->cct, 0) << "DSS INFO: Converting to copy request. s->object: "
                      << (s->object).name << ". Copy source: " << copysource << dendl;
     s->info.env->set("HTTP_X_JCS_COPY_SOURCE", copysource.c_str());
@@ -3549,44 +3550,70 @@ void RGWRenameObj::execute()
       ret = RGWCopyObj::parse_copy_location(s->copy_source, s->src_bucket_name, s->src_object);
       if (!ret) {
         ldout(s->cct, 0) << "DSS INFO: Rename op failed to parse copy location" << dendl;
+        s->err.ret = -ERR_RENAME_PARSE_FAILED;
         return;
       }
-      /*ret = validate_bucket_name(s->src_bucket_name, bucket_name_strictness_value);
-      if (ret) {
-        ldout(s->cct, 0) << "DSS INFO: Rename op bucket name not valid" << dendl;
-        return;
-      }
-      ret = validate_object_name(s->src_object.name);
-      if (ret) {
-        ldout(s->cct, 0) << "DSS INFO: Rename op object name not valid" << dendl;
-        return;
-      }*/
     }
 
-    copy_op->init(store, s, dialect_handler);
-    copy_op->verify_op_mask();
-    copy_op->verify_permission();
-    copy_op->verify_params();
-    copy_op->init_processing();
-    s->system_request = true;
-    copy_op->pre_exec();
-    copy_op->execute();
+    perform_external_op(copy_op);
+    if ((s->err.http_ret != 200) || (s->err.ret != 0)) {
+        ldout(s->cct, 0) << "DSS ERROR: Copy object failed during rename op."
+                         << " . Return status: " << s->err.ret
+                         << " . Return HTTP code: " << s->err.http_ret
+                         << " . Return Message: " << copy_op->get_request_state()->err.message
+                         << dendl;
+        s->err.ret = -ERR_RENAME_COPY_FAILED;
+        return;
+    }
     ldout(s->cct, 0) << "DSS INFO: Rename op copy done" << dendl;
 
-    s->system_request = false;
-    (s->object).dss_duplicate(&orig_object);
+    (s->object).dss_duplicate(&buffer_object);
     ldout(s->cct, 0) << "DSS INFO: Rearraging things to continue with delete. s->object: "
                      << (s->object).name << dendl;
     RGWDeleteObj_ObjStore_S3* del_op = new RGWDeleteObj_ObjStore_S3;
-    del_op->init(store, s, dialect_handler);
-    del_op->verify_permission();
-    del_op->verify_params();
-    del_op->verify_op_mask();
-    del_op->init_processing();
-    s->system_request = true;
-    del_op->pre_exec();
-    del_op->execute();
+    perform_external_op(del_op);
+    if ((s->err.http_ret != 200) || (s->err.ret != 0)) {
+        ldout(s->cct, 0) << "DSS ERROR: Delete object failed during rename op. Please"
+                         << "manually delete the original object specified in the request."
+                         << " . Return status: " << s->err.ret
+                         << " . Return HTTP code: " << s->err.http_ret
+                         << " . Return Message: " << del_op->get_request_state()->err.message
+                         << dendl;
+        s->err.ret = -ERR_RENAME_DEL_FAILED;
+        return;
+    }
     ldout(s->cct, 0) << "DSS INFO: Rename op delete performed"  << dendl;
-    s->system_request = false;
     return;
+}
+
+void RGWRenameObj::perform_external_op(RGWOp* bp)
+{
+    bool failure = false;
+    bp->init(store, s, dialect_handler);
+    ret = bp->init_processing();
+    if ((ret < 0) || failure) {
+        failure = true;
+    }
+    ret = bp->verify_op_mask();
+    if ((ret < 0) || failure) {
+        failure = true;
+    }
+    ret = bp->verify_permission();
+    if ((ret < 0) || failure) {
+        failure = true;
+    }
+    ret = bp->verify_params();
+    if ((ret < 0) || failure) {
+        failure = true;
+    }
+    if (!failure) {
+        s->system_request = true;
+        bp->pre_exec();
+        bp->execute();
+        s->system_request = false;
+        s->err.ret = bp->get_request_state()->err.ret;
+    } else {
+        s->err.ret = ret;
+    }
+    s->err.http_ret = bp->get_request_state()->err.http_ret;
 }

@@ -87,7 +87,9 @@ public:
 
     return 0;
   }
-
+  req_state* get_request_state() {
+    return s;
+  }
   virtual void init(RGWRados *store, struct req_state *s, RGWHandler *dialect_handler) {
     this->store = store;
     this->s = s;
@@ -573,6 +575,7 @@ class RGWRenameObj : public RGWOp {
       int verify_permission();
       void pre_exec();
       void execute();
+      void perform_external_op(RGWOp*);
       virtual const string name() { return "Rename_obj"; }
 };
 

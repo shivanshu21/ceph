@@ -1620,7 +1620,7 @@ int RGWPutACLs_ObjStore_S3::get_policy_from_state(RGWRados *store, struct req_st
 
 void RGWRenameObj_ObjStore_S3::send_response()
 {
-  ret = 0;
+  ret = s->err.ret;
   if (ret)
     set_req_state_err(s, ret);
   dump_errno(s);
@@ -2129,7 +2129,7 @@ RGWOp *RGWHandler_ObjStore_Obj_S3::op_put()
   if (is_acl_op()) {
     return new RGWPutACLs_ObjStore_S3;
   }
-  if (is_rename_op() && store->ctx()->_conf->rgw_enable_rename_op) {
+  if (store->ctx()->_conf->rgw_enable_rename_op && is_rename_op()) {
     return new RGWRenameObj_ObjStore_S3;
   }
   if (!s->copy_source)
@@ -2741,7 +2741,10 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
   }
 
   // Block rename op for illegal cases
-  if ((store->ctx()->_conf->rgw_enable_rename_op) && (s->info.args.exists("newname"))) {
+  if (s->info.args.exists("newname")) {
+      if (!(store->ctx()->_conf->rgw_enable_rename_op)) {
+          return -ERR_RENAME_NOT_ENABLED;
+      }
       if (s->op == OP_PUT) {
           if ((s->object).name.empty()) {
               return -ERR_BAD_RENAME_REQ;
