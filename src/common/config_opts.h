@@ -1077,7 +1077,11 @@ OPTION(rgw_keystone_token_api, OPT_STR, "v3/token-auth")  // api to validate tok
 OPTION(rgw_keystone_url_token_api, OPT_STR, "url-auth")   // api to validate presigned token URL based authentication requests
 OPTION(rgw_keystone_infinite_url_token_api, OPT_STR, "preauth-token-auth")   // api to validate infinite time presigned token URL
 OPTION(dss_regional_url, OPT_STR, "https://dss.ind-west-1.staging.jiocloudservices.com") // URL to be returned in XMLNS during anonymous list all buckets calls
-OPTION(rgw_enable_rename_op, OPT_BOOL, true)              // enable the atomic rename op
+OPTION(rgw_enable_rename_op, OPT_BOOL, true)                    // Enable the atomic rename op
+OPTION(fault_inj_rename_op_copy_fail, OPT_BOOL, false)          // Injects fault in rename op during copy operation
+OPTION(fault_inj_rename_op_delete_fail, OPT_BOOL, false)        // Injects fault in rename op during delete operation
+OPTION(fault_inj_rename_op_parse_fail, OPT_BOOL, false)         // Injects fault in rename op during parse operation
+OPTION(fault_inj_rename_op_sleep_after_copy, OPT_BOOL, false)   // Make rename op sleep after copy
 
 OPTION(mutex_perf_counter, OPT_BOOL, false) // enable/disable mutex perf counter
 OPTION(throttler_perf_counter, OPT_BOOL, true) // enable/disable throttler perf counter

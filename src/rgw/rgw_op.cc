@@ -3534,78 +3534,139 @@ void RGWRenameObj::execute()
 {
     ret = 0;
     s->err.ret = 0;
-    rgw_obj_key buffer_object;
-    buffer_object.dss_duplicate(&(s->object));
+    rgw_obj_key orig_object, new_obj;
+    orig_object.dss_duplicate(&(s->object));
+
+    /* Check if the original object exists */
+    ret = check_obj(orig_object);
+    if (ret < 0) {
+        // The passed original object does not exist
+        s->err.ret = ret;
+        return;
+    }
+
+    /* Tweek request params to make this a copy request */
     (s->object).name = s->info.args.get("newname");
     string copysource = s->bucket_name_str;
     copysource.append("/");
-    copysource.append(buffer_object.name);
+    copysource.append(orig_object.name);
     ldout(s->cct, 0) << "DSS INFO: Converting to copy request. s->object: "
                      << (s->object).name << ". Copy source: " << copysource << dendl;
     s->info.env->set("HTTP_X_JCS_COPY_SOURCE", copysource.c_str());
     s->info.env->set("HTTP_X_JCS_METADATA_DIRECTIVE", "COPY");
     s->copy_source = s->info.env->get("HTTP_X_JCS_COPY_SOURCE");
-    RGWCopyObj_ObjStore_S3* copy_op = new RGWCopyObj_ObjStore_S3;
     if (s->copy_source) {
       ret = RGWCopyObj::parse_copy_location(s->copy_source, s->src_bucket_name, s->src_object);
-      if (!ret) {
+      if (!ret || (store->ctx()->_conf->fault_inj_rename_op_parse_fail)) {
         ldout(s->cct, 0) << "DSS INFO: Rename op failed to parse copy location" << dendl;
-        s->err.ret = -ERR_RENAME_PARSE_FAILED;
+        s->err.ret = -ERR_RENAME_FAILED;
         return;
       }
     }
 
+    /* Perform copy operation */
+    RGWCopyObj_ObjStore_S3* copy_op = new RGWCopyObj_ObjStore_S3;
     perform_external_op(copy_op);
-    if ((s->err.http_ret != 200) || (s->err.ret != 0)) {
+
+    if ((store->ctx()->_conf->fault_inj_rename_op_sleep_after_copy)) {
+        // Fault injection to test atomicity
+        std::this_thread::sleep_for(60s);
+    }
+
+    if ((s->err.http_ret != 200) ||
+        (s->err.ret != 0)) {
         ldout(s->cct, 0) << "DSS ERROR: Copy object failed during rename op."
                          << " . Return status: " << s->err.ret
                          << " . Return HTTP code: " << s->err.http_ret
                          << " . Return Message: " << copy_op->get_request_state()->err.message
                          << dendl;
-        s->err.ret = -ERR_RENAME_COPY_FAILED;
+        s->err.ret = -ERR_RENAME_FAILED;
         return;
     }
-    ldout(s->cct, 0) << "DSS INFO: Rename op copy done" << dendl;
+    ldout(s->cct, 0) << "DSS INFO: Rename op: copy done" << dendl;
 
-    (s->object).dss_duplicate(&buffer_object);
-    ldout(s->cct, 0) << "DSS INFO: Rearraging things to continue with delete. s->object: "
-                     << (s->object).name << dendl;
-    RGWDeleteObj_ObjStore_S3* del_op = new RGWDeleteObj_ObjStore_S3;
-    perform_external_op(del_op);
-    if ((s->err.http_ret != 200) || (s->err.ret != 0)) {
-        ldout(s->cct, 0) << "DSS ERROR: Delete object failed during rename op. Please"
-                         << "manually delete the original object specified in the request."
+    /* Tweek the request for a delete obj operation and perform delete op */
+    new_obj.dss_duplicate(&(s->object));
+    (s->object).dss_duplicate(&orig_object);
+    delete_rgw_object();
+    if ((s->err.http_ret != 200) ||
+        (s->err.ret != 0)) {
+        ldout(s->cct, 0) << "DSS ERROR: Delete object failed during rename op."
                          << " . Return status: " << s->err.ret
                          << " . Return HTTP code: " << s->err.http_ret
                          << " . Return Message: " << del_op->get_request_state()->err.message
                          << dendl;
-        s->err.ret = -ERR_RENAME_DEL_FAILED;
+
+        /* Revert the copy op */
+        int ret_orig, ret_newobj;
+        ret_orig = check_obj(s->object);
+        ret_newobj = check_obj(new_obj);
+        if (ret_orig < 0) {
+            // Delete failed but we don't have original object!!
+            if (ret_newobj < 0) {
+                // We are in a soup. Data lost. This is not the case we will ever end up in.
+                s->err.ret = -ERR_RENAME_DATA_LOST;
+            } else {
+                // Everything normal
+                if (!store->ctx()->_conf->fault_inj_rename_op_delete_fail) {
+                    s->err.http_ret = 200;
+                    s->err.ret = 0;
+                }
+            }
+        } else {
+            if (ret_newobj >= 0) {
+                // Delete the new object
+                (s->object).dss_duplicate(&new_obj);
+                delete_rgw_object();
+                if ((s->err.http_ret != 200) ||
+                    (s->err.ret != 0)) {
+                    s->err.ret = -ERR_RENAME_NEW_OBJ_DEL_FAILED;
+                } else {
+                    // Indicate that there has been a failure
+                    s->err.ret = -ERR_RENAME_FAILED;
+                }
+            } else {
+                // Log major error. Ask user to file a bug. Why didn't copy fail?
+                s->err.ret = -ERR_RENAME_COPY_FAILED;
+            }
+        }
         return;
     }
-    ldout(s->cct, 0) << "DSS INFO: Rename op delete performed"  << dendl;
+    ldout(s->cct, 0) << "DSS INFO: Rename op complete"  << dendl;
     return;
 }
 
 void RGWRenameObj::perform_external_op(RGWOp* bp)
 {
+    // Fault injection if tester wants so
+    if ((store->ctx()->_conf->fault_inj_rename_op_copy_fail) ||
+        (store->ctx()->_conf->fault_inj_rename_op_delete_fail)) {
+        s->err.http_ret = 403;
+        s->err.ret = -ERR_RENAME_FAULT_INJ;
+    }
+
     bool failure = false;
     bp->init(store, s, dialect_handler);
     ret = bp->init_processing();
-    if ((ret < 0) || failure) {
+    if (ret < 0) {
+        failure = true;
+    } else {
+        ret = bp->verify_op_mask();
+    }
+    if (ret < 0) {
+        failure = true;
+    } else {
+        ret = bp->verify_permission();
+    }
+    if (ret < 0) {
+        failure = true;
+    } else {
+        ret = bp->verify_params();
+    }
+    if (ret < 0) {
         failure = true;
     }
-    ret = bp->verify_op_mask();
-    if ((ret < 0) || failure) {
-        failure = true;
-    }
-    ret = bp->verify_permission();
-    if ((ret < 0) || failure) {
-        failure = true;
-    }
-    ret = bp->verify_params();
-    if ((ret < 0) || failure) {
-        failure = true;
-    }
+
     if (!failure) {
         s->system_request = true;
         bp->pre_exec();
@@ -3616,4 +3677,37 @@ void RGWRenameObj::perform_external_op(RGWOp* bp)
         s->err.ret = ret;
     }
     s->err.http_ret = bp->get_request_state()->err.http_ret;
+    s->err.ret = bp->get_request_state()->err.ret;
+}
+
+int RGWRenameObj::check_obj(rgw_obj_key& object)
+{
+    rgw_obj lobj(s->bucket, object);
+    RGWObjectCtx obj_ctx(store);
+    RGWObjState *ros = obj_ctx.get_state(lobj);
+
+    /*if (ros->exists) {
+        ldout(s->cct, 0) << "DSS INFO: =============== exists " << dendl;
+    } else {
+        ldout(s->cct, 0) << "DSS INFO: =============== DOES NOT exist " << dendl;
+    }*/
+
+    ret = store->raw_obj_stat(lobj, NULL, NULL, NULL, NULL, NULL, NULL);
+    /////ldout(s->cct, 0) << "DSS INFO: ----------------- check obj ret is " << ret << dendl;
+    if (ret < 0) {
+        ldout(s->cct, 0) << "DSS ERROR: The object " << object.name
+                         << " does not exist. Error code: " <<  ret << dendl;
+        return ret;
+    }
+
+    return 0;
+}
+
+void RGWRenameObj::delete_rgw_object()
+{
+    ldout(s->cct, 0) << "DSS INFO: Deleting object. s->object.name: "
+                     << (s->object).name << dendl;
+    RGWDeleteObj_ObjStore_S3* del_op = new RGWDeleteObj_ObjStore_S3;
+    perform_external_op(del_op);
+    return;
 }
