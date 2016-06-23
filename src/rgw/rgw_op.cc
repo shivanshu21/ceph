@@ -3,9 +3,9 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include <sstream>
-
 #include "common/Clock.h"
 #include "common/armor.h"
 #include "common/mime.h"
@@ -3570,7 +3570,7 @@ void RGWRenameObj::execute()
 
     if ((store->ctx()->_conf->fault_inj_rename_op_sleep_after_copy)) {
         // Fault injection to test atomicity
-        std::this_thread::sleep_for(60s);
+        sleep(60);
     }
 
     if ((s->err.http_ret != 200) ||
@@ -3588,7 +3588,8 @@ void RGWRenameObj::execute()
     /* Tweek the request for a delete obj operation and perform delete op */
     new_obj.dss_duplicate(&(s->object));
     (s->object).dss_duplicate(&orig_object);
-    delete_rgw_object();
+    RGWDeleteObj_ObjStore_S3* del_op = new RGWDeleteObj_ObjStore_S3;
+    delete_rgw_object(del_op);
     if ((s->err.http_ret != 200) ||
         (s->err.ret != 0)) {
         ldout(s->cct, 0) << "DSS ERROR: Delete object failed during rename op."
@@ -3617,7 +3618,8 @@ void RGWRenameObj::execute()
             if (ret_newobj >= 0) {
                 // Delete the new object
                 (s->object).dss_duplicate(&new_obj);
-                delete_rgw_object();
+                RGWDeleteObj_ObjStore_S3* del_op = new RGWDeleteObj_ObjStore_S3;
+                delete_rgw_object(del_op);
                 if ((s->err.http_ret != 200) ||
                     (s->err.ret != 0)) {
                     s->err.ret = -ERR_RENAME_NEW_OBJ_DEL_FAILED;
@@ -3684,30 +3686,25 @@ int RGWRenameObj::check_obj(rgw_obj_key& object)
 {
     rgw_obj lobj(s->bucket, object);
     RGWObjectCtx obj_ctx(store);
-    RGWObjState *ros = obj_ctx.get_state(lobj);
+    RGWObjState *ros = NULL;
 
-    /*if (ros->exists) {
-        ldout(s->cct, 0) << "DSS INFO: =============== exists " << dendl;
-    } else {
-        ldout(s->cct, 0) << "DSS INFO: =============== DOES NOT exist " << dendl;
-    }*/
-
-    ret = store->raw_obj_stat(lobj, NULL, NULL, NULL, NULL, NULL, NULL);
-    /////ldout(s->cct, 0) << "DSS INFO: ----------------- check obj ret is " << ret << dendl;
+    ret = store->get_obj_state(&obj_ctx, lobj, &ros, NULL);
     if (ret < 0) {
-        ldout(s->cct, 0) << "DSS ERROR: The object " << object.name
-                         << " does not exist. Error code: " <<  ret << dendl;
+        ldout(s->cct, 0) << "DSS ERROR: Failed to fetch obj state" << dendl;
         return ret;
     }
 
+    if (!ros->exists) {
+        ldout(s->cct, 0) << "DSS ERROR: The object " << object.name << " does not exist." << dendl;
+        return -ENOENT;
+    }
     return 0;
 }
 
-void RGWRenameObj::delete_rgw_object()
+void RGWRenameObj::delete_rgw_object(RGWOp* del_op)
 {
     ldout(s->cct, 0) << "DSS INFO: Deleting object. s->object.name: "
                      << (s->object).name << dendl;
-    RGWDeleteObj_ObjStore_S3* del_op = new RGWDeleteObj_ObjStore_S3;
     perform_external_op(del_op);
     return;
 }

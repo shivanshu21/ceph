@@ -47,6 +47,7 @@ const static struct rgw_http_errors RGW_HTTP_ERRORS[] = {
     { ERR_QUOTA_EXCEEDED, 403, "QuotaExceeded" },
     { ERR_BAD_RENAME_REQ, 403, "Rename request must have object name, new object name and the HTTP method should be PUT." },
     { ERR_RENAME_NOT_ENABLED, 403, "Rename operation is not enabled"},
+    { ERR_RENAME_FAULT_INJ, 403, "Rename operation fault has been activated"},
     { ENOENT, 404, "NoSuchKey", "Resource not found."},
     { ERR_NO_SUCH_BUCKET, 404, "NoSuchBucket", "Resource not found"},
     { ERR_NO_SUCH_UPLOAD, 404, "NoSuchUpload", "The specified multipart upload does not exist. The upload ID might be invalid, or the multipart upload might have been aborted or completed."},
