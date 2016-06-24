@@ -3645,6 +3645,7 @@ void RGWRenameObj::perform_external_op(RGWOp* bp)
         (store->ctx()->_conf->fault_inj_rename_op_delete_fail)) {
         s->err.http_ret = 403;
         s->err.ret = -ERR_RENAME_FAULT_INJ;
+        return;
     }
 
     bool failure = false;
