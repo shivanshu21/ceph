@@ -3640,6 +3640,9 @@ void RGWRenameObj::execute()
 
 void RGWRenameObj::perform_external_op(RGWOp* bp)
 {
+    bool failure = false;
+    bp->init(store, s, dialect_handler);
+
     // Fault injection if tester wants so
     if ((store->ctx()->_conf->fault_inj_rename_op_copy_fail) ||
         (store->ctx()->_conf->fault_inj_rename_op_delete_fail)) {
@@ -3648,8 +3651,6 @@ void RGWRenameObj::perform_external_op(RGWOp* bp)
         return;
     }
 
-    bool failure = false;
-    bp->init(store, s, dialect_handler);
     ret = bp->init_processing();
     if (ret < 0) {
         failure = true;
