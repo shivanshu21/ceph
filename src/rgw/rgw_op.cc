@@ -3586,9 +3586,9 @@ void RGWRenameObj::execute()
         ldout(s->cct, 0) << "DSS ERROR: Copy object failed during rename op."
                          << " Return status: " << s->err.ret
                          << " Return HTTP code: " << s->err.http_ret
-                         << " Return Message: " << copy_op->get_request_state()->err.message
                          << dendl;
         if (!(store->ctx()->_conf->fault_inj_rename_op_copy_fail)) {
+            // Cause otherwise its us who set that message to ERR_RENAME_FAULT_INJ
             s->err.ret = -ERR_RENAME_FAILED;
             s->err.http_ret = 400;
         }
