@@ -153,6 +153,7 @@ using ceph::crypto::MD5;
 #define ERR_RENAME_COPY_FAILED   2034
 #define ERR_RENAME_NEW_OBJ_DEL_FAILED     2035
 #define ERR_RENAME_FAULT_INJ     2036
+#define ERR_RENAME_OBJ_EXISTS    2037
 #define ERR_USER_SUSPENDED       2100
 #define ERR_INTERNAL_ERROR       2200
 

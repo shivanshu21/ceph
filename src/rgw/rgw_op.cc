@@ -3547,6 +3547,14 @@ void RGWRenameObj::execute()
 
     /* Tweek request params to make this a copy request */
     (s->object).name = s->info.args.get("newname");
+    ret = check_obj(s->object);
+    if (ret >= 0) {
+        ldout(s->cct, 0) << "DSS ERROR: Target object already exists." << dendl;
+        s->err.http_ret = 403;
+        s->err.ret = -ERR_RENAME_OBJ_EXISTS;
+        return;
+    }
+
     string copysource = s->bucket_name_str;
     copysource.append("/");
     copysource.append(orig_object.name);
