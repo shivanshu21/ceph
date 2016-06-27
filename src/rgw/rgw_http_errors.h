@@ -50,6 +50,7 @@ const static struct rgw_http_errors RGW_HTTP_ERRORS[] = {
     { ERR_RENAME_FAULT_INJ, 403, "FaultInjection", "A rename operation tester fault has been activated"},
     { ERR_RENAME_FAILED, 403, "RenameFailed", "Rename operation has failed."},
     { ERR_RENAME_OBJ_EXISTS, 403, "ObjectExists", "Rename operation cannot continue as the target object already exists."},
+    { ERR_RENAME_RUNNING, 403, "RenameOperationRunning", "A rename operation is running on this object. Please try later."},
     { ENOENT, 404, "NoSuchKey", "Resource not found."},
     { ERR_NO_SUCH_BUCKET, 404, "NoSuchBucket", "Resource not found"},
     { ERR_NO_SUCH_UPLOAD, 404, "NoSuchUpload", "The specified multipart upload does not exist. The upload ID might be invalid, or the multipart upload might have been aborted or completed."},

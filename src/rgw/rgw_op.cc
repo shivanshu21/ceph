@@ -1746,6 +1746,7 @@ void RGWPutObj::execute()
   int len;
   map<string, string>::iterator iter;
   bool multipart;
+  bool isRenameRunning = false;
 
   bool need_calc_md5 = (obj_manifest == NULL);
 
@@ -1753,6 +1754,13 @@ void RGWPutObj::execute()
   perfcounter->inc(l_rgw_put);
   ret = -EINVAL;
   if (s->object.empty()) {
+    goto done;
+  }
+
+  // Fail the put object or replace operation if a rename is running on this object
+  ret = get_rename_obj_atomicity(s, store, isRenameRunning);
+  if ((ret < 0) || isRenameRunning) {
+    ret = -ERR_RENAME_RUNNING;
     goto done;
   }
 
@@ -2224,6 +2232,14 @@ void RGWDeleteObj::execute()
 {
   ret = -EINVAL;
   rgw_obj obj(s->bucket, s->object);
+
+  // Stop deletion of this object if a rename is running on it
+  bool isRenameRunning = false;
+  ret = get_rename_obj_atomicity(s, store, isRenameRunning);
+  if ((ret < 0) || isRenameRunning) {
+    ret = -ERR_RENAME_RUNNING;
+    return;
+  }
   if (!s->object.empty()) {
     RGWObjectCtx *obj_ctx = (RGWObjectCtx *)s->obj_ctx;
 
@@ -3536,6 +3552,11 @@ void RGWRenameObj::execute()
     s->err.ret = 0;
     rgw_obj_key orig_object, new_obj;
     orig_object.dss_duplicate(&(s->object));
+    string copysource;
+    int ret_orig, ret_newobj;
+    RGWCopyObj_ObjStore_S3* copy_op = NULL;
+    RGWDeleteObj_ObjStore_S3* del_op = NULL;
+    RGWDeleteObj_ObjStore_S3* ndel_op = NULL;
 
     /* Check if the original object exists and set it atomic */
     ret = check_obj(orig_object);
@@ -3559,10 +3580,10 @@ void RGWRenameObj::execute()
         ldout(s->cct, 0) << "DSS ERROR: Target object already exists." << dendl;
         s->err.http_ret = 403;
         s->err.ret = -ERR_RENAME_OBJ_EXISTS;
-        return;
+        goto rename_done;
     }
 
-    string copysource = s->bucket_name_str;
+    copysource = s->bucket_name_str;
     copysource.append("/");
     copysource.append(orig_object.name);
     ldout(s->cct, 0) << "DSS INFO: Converting to copy request. s->object: "
@@ -3576,12 +3597,12 @@ void RGWRenameObj::execute()
         ldout(s->cct, 0) << "DSS INFO: Rename op failed to parse copy location" << dendl;
         s->err.http_ret = 403;
         s->err.ret = -ERR_RENAME_FAULT_INJ;
-        return;
+        goto rename_done;
       }
     }
 
     /* Perform copy operation */
-    RGWCopyObj_ObjStore_S3* copy_op = new RGWCopyObj_ObjStore_S3;
+    copy_op = new RGWCopyObj_ObjStore_S3;
 
     // Fault injection
     if (!(store->ctx()->_conf->fault_inj_rename_op_copy_fail)) {
@@ -3606,24 +3627,22 @@ void RGWRenameObj::execute()
             s->err.ret = -ERR_RENAME_FAILED;
             s->err.http_ret = 400;
         }
-        return;
+        goto rename_done;
     } else {
         // Need to clear atomic attribute so that delete op may go through
-        bool bbb; //<<<<<
-        get_rename_obj_atomicity(s, store, bbb);
         ret = set_obj_atomic(false);
         if (ret < 0) {
             ldout(s->cct, 0) << "DSS ERROR: Failed to set atomicity attribute on the object. Error code: "
                              << ret << dendl;
         }
-        get_rename_obj_atomicity(s, store, bbb);
+        //get_rename_obj_atomicity(s, store, bbb);
     }
     ldout(s->cct, 0) << "DSS INFO: Rename op: copy done" << dendl;
 
     /* Tweek the request for a delete obj operation and perform delete op */
     new_obj.dss_duplicate(&(s->object));
     (s->object).dss_duplicate(&orig_object);
-    RGWDeleteObj_ObjStore_S3* del_op = new RGWDeleteObj_ObjStore_S3;
+    del_op = new RGWDeleteObj_ObjStore_S3;
 
     // Fault injection
     if (!(store->ctx()->_conf->fault_inj_rename_op_delete_fail)) {
@@ -3641,7 +3660,6 @@ void RGWRenameObj::execute()
                          << dendl;
 
         /* Revert the copy op */
-        int ret_orig, ret_newobj;
         ret_orig = check_obj(s->object);
         ret_newobj = check_obj(new_obj);
         if (ret_orig < 0) {
@@ -3663,7 +3681,7 @@ void RGWRenameObj::execute()
             if (ret_newobj >= 0) {
                 // Delete the new object
                 (s->object).dss_duplicate(&new_obj);
-                RGWDeleteObj_ObjStore_S3* ndel_op = new RGWDeleteObj_ObjStore_S3;
+                ndel_op = new RGWDeleteObj_ObjStore_S3;
                 delete_rgw_object(ndel_op);
 
                 if ((s->err.http_ret != 200) ||
@@ -3685,9 +3703,17 @@ void RGWRenameObj::execute()
                 s->err.http_ret = 500;
             }
         }
-        return;
+        goto rename_done;
     }
+
     ldout(s->cct, 0) << "DSS INFO: Rename op complete" << dendl;
+rename_done:
+    // Clear atomicity
+    ret = set_obj_atomic(false);
+    if (ret < 0) {
+        ldout(s->cct, 0) << "DSS ERROR: Failed to set atomicity attribute on the object. Error code: "
+                         << ret << dendl;
+    }
     return;
 }
 
@@ -3761,7 +3787,6 @@ void RGWRenameObj::delete_rgw_object(RGWOp* del_op)
 
 int RGWRenameObj::set_obj_atomic(bool value)
 {
-    string attrname = "rename_op_atomicity";
     bufferlist bl;
     rgw_obj lobj(s->bucket, s->object);
     store->set_atomic(s->obj_ctx, lobj);
@@ -3770,7 +3795,8 @@ int RGWRenameObj::set_obj_atomic(bool value)
     } else {
         bl.append("unset");
     }
-    ret = store->set_attr(s->cct, lobj, attrname.c_str(), bl, NULL);
+    //RGWObjVersionTracker* objv_tracker;
+    ret = store->set_attr(s->obj_ctx, lobj, RGW_ATTR_RENAME_MUTEX, bl, NULL);
     if (ret < 0) {
         return ret;
     }
@@ -3780,13 +3806,12 @@ int RGWRenameObj::set_obj_atomic(bool value)
 int get_rename_obj_atomicity(req_state* s, RGWRados* store, bool& value)
 {
     int ret = 0;
-    string attrname = "rename_op_atomicity";
     string attrval;
     bufferlist bl;
 
     rgw_obj lobj(s->bucket, s->object);
     store->set_atomic(s->obj_ctx, lobj);
-    ret = store->system_obj_get_attr(lobj, attrname.c_str(), bl);
+    ret = store->system_obj_get_attr(lobj, RGW_ATTR_RENAME_MUTEX, bl);
     if (ret < 0) {
         return ret;
     }
