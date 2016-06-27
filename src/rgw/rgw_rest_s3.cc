@@ -2545,9 +2545,7 @@ int RGW_Auth_S3_Keystone_ValidateToken::validate_request(const string& action,
   string bufferprinter = "";
   tx_buffer.copy(0, tx_buffer.length(), bufferprinter);
   dout(0) << "DSS INFO: \n\n" << dendl;
-  dout(0) << "DSS INFO: Outbound json: " << os.str() << dendl;
-  dout(0) << "DSS INFO: \n\n" << dendl;
-  dout(0) << "DSS INFO: Actual TX buffer: " << bufferprinter << dendl;
+  dout(0) << "DSS INFO: TX buffer: " << bufferprinter << dendl;
   dout(0) << "DSS INFO: \n\n" << dendl;
 
   /* Make request to IAM */
