@@ -1746,7 +1746,6 @@ void RGWPutObj::execute()
   int len;
   map<string, string>::iterator iter;
   bool multipart;
-  bool isRenameRunning = false;
 
   bool need_calc_md5 = (obj_manifest == NULL);
 

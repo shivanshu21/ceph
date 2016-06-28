@@ -25,8 +25,6 @@
 #include "rgw_cors.h"
 #include "rgw_quota.h"
 
-#define RENAME_OP_TESTING_FAULTS 1
-
 using namespace std;
 
 struct req_state;
