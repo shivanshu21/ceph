@@ -580,16 +580,8 @@ class RGWRenameObj : public RGWOp {
       void perform_external_op(RGWOp*);
       void delete_rgw_object(RGWOp*);
       int check_obj(rgw_obj_key&);
-//      int set_obj_atomic(bool);
       virtual const string name() { return "Rename_obj"; }
-#ifdef RENAME_OP_TESTING_FAULTS
-      bool fail_copy();
-      bool fail_parse();
-      bool fail_delete();
-      int getsRandInt();
-#endif
 };
-//int get_rename_obj_atomicity(req_state*, RGWRados*, bool&);
 
 class RGWCopyObj : public RGWOp {
 protected:
