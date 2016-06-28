@@ -1759,7 +1759,8 @@ void RGWPutObj::execute()
 
   // Fail the put object or replace operation if a rename is running on this object
   ret = get_rename_obj_atomicity(s, store, isRenameRunning);
-  if ((ret < 0) || isRenameRunning) {
+  if ((ret >= 0) && isRenameRunning) {
+    ldout(s->cct, 0) << "DSS Rename atomicity: ret was" << ret << " Bool was: " << isRenameRunning << dendl;
     ret = -ERR_RENAME_RUNNING;
     goto done;
   }
@@ -2236,7 +2237,7 @@ void RGWDeleteObj::execute()
   // Stop deletion of this object if a rename is running on it
   bool isRenameRunning = false;
   ret = get_rename_obj_atomicity(s, store, isRenameRunning);
-  if ((ret < 0) || isRenameRunning) {
+  if ((ret >= 0) && isRenameRunning) {
     ret = -ERR_RENAME_RUNNING;
     return;
   }
@@ -3605,7 +3606,7 @@ void RGWRenameObj::execute()
     copy_op = new RGWCopyObj_ObjStore_S3;
 
     // Fault injection
-    if (!(store->ctx()->_conf->fault_inj_rename_op_copy_fail)) {
+    if (!fail_copy()) {
         perform_external_op(copy_op);
     } else {
         s->err.http_ret = 403;
@@ -3635,7 +3636,6 @@ void RGWRenameObj::execute()
             ldout(s->cct, 0) << "DSS ERROR: Failed to set atomicity attribute on the object. Error code: "
                              << ret << dendl;
         }
-        //get_rename_obj_atomicity(s, store, bbb);
     }
     ldout(s->cct, 0) << "DSS INFO: Rename op: copy done" << dendl;
 
@@ -3645,7 +3645,7 @@ void RGWRenameObj::execute()
     del_op = new RGWDeleteObj_ObjStore_S3;
 
     // Fault injection
-    if (!(store->ctx()->_conf->fault_inj_rename_op_delete_fail)) {
+    if (!fail_delete()) {
         delete_rgw_object(del_op);
     } else {
         s->err.http_ret = 403;
@@ -3795,7 +3795,6 @@ int RGWRenameObj::set_obj_atomic(bool value)
     } else {
         bl.append("unset");
     }
-    //RGWObjVersionTracker* objv_tracker;
     ret = store->set_attr(s->obj_ctx, lobj, RGW_ATTR_RENAME_MUTEX, bl, NULL);
     if (ret < 0) {
         return ret;
@@ -3824,3 +3823,43 @@ int get_rename_obj_atomicity(req_state* s, RGWRados* store, bool& value)
     }
     return 0;
 }
+
+#ifdef RENAME_OP_TESTING_FAULTS
+bool RGWRenameObj::fail_copy()
+{
+    if(store->ctx()->_conf->fault_inj_rename_op_copy_fail) {
+        int num = getsRandInt();
+        if (num % 3)
+            return true;
+    }
+    return false;
+}
+
+bool RGWRenameObj::fail_parse()
+{
+    if(store->ctx()->_conf->fault_inj_rename_op_parse_fail) {
+        int num = getsRandInt();
+        if (num % 4)
+            return true;
+    }
+    return false;
+}
+
+bool RGWRenameObj::fail_delete()
+{
+    if(store->ctx()->_conf->fault_inj_rename_op_delete_fail) {
+        int num = getsRandInt();
+        if (num % 2)
+            return true;
+    }
+    return false;
+}
+
+int RGWRenameObj::getsRandInt()
+{
+    int num = 0;
+    srand(time(NULL));
+    num = rand() % 10;
+    return num;
+}
+#endif

@@ -25,6 +25,8 @@
 #include "rgw_cors.h"
 #include "rgw_quota.h"
 
+#define RENAME_OP_TESTING_FAULTS 1
+
 using namespace std;
 
 struct req_state;
@@ -580,6 +582,12 @@ class RGWRenameObj : public RGWOp {
       int check_obj(rgw_obj_key&);
       int set_obj_atomic(bool);
       virtual const string name() { return "Rename_obj"; }
+#ifdef RENAME_OP_TESTING_FAULTS
+      bool fail_copy();
+      bool fail_parse();
+      bool fail_delete();
+      int getsRandInt();
+#endif
 };
 static int get_rename_obj_atomicity(req_state*, RGWRados*, bool&);
 
